@@ -1,0 +1,83 @@
+services:
+  gnb:
+    image: ghcr.io/herlesupreeth/docker_ueransim:master
+    container_name: sandbox_gnb
+    stdin_open: true
+    tty: true
+    env_file:
+      - .env
+    environment:
+      - COMPONENT_NAME=ueransim-gnb
+    volumes:
+      - ./ueransim:/mnt/ueransim
+    cap_add:
+      - NET_ADMIN
+    privileged: true
+    networks:
+      sandbox_core:
+        ipv4_address: ${NR_GNB_IP}
+
+  ue1:
+    image: ghcr.io/herlesupreeth/docker_ueransim:master
+    container_name: sandbox_ue1
+    depends_on:
+      - gnb
+    stdin_open: true
+    tty: true
+    env_file:
+      - .env
+    environment:
+      - COMPONENT_NAME=ueransim-ue1
+    volumes:
+      - ./ueransim:/mnt/ueransim
+    cap_add:
+      - NET_ADMIN
+    privileged: true
+    networks:
+      sandbox_core:
+        ipv4_address: ${NR_UE1_IP}
+
+  ue2:
+    image: ghcr.io/herlesupreeth/docker_ueransim:master
+    container_name: sandbox_ue2
+    depends_on:
+      - gnb
+    stdin_open: true
+    tty: true
+    env_file:
+      - .env
+    environment:
+      - COMPONENT_NAME=ueransim-ue2
+    volumes:
+      - ./ueransim:/mnt/ueransim
+    cap_add:
+      - NET_ADMIN
+    privileged: true
+    networks:
+      sandbox_core:
+        ipv4_address: ${NR_UE2_IP}
+
+  ue3:
+    image: ghcr.io/herlesupreeth/docker_ueransim:master
+    container_name: sandbox_ue3
+    depends_on:
+      - gnb
+    stdin_open: true
+    tty: true
+    env_file:
+      - .env
+    environment:
+      - COMPONENT_NAME=ueransim-ue3
+    volumes:
+      - ./ueransim:/mnt/ueransim
+    cap_add:
+      - NET_ADMIN
+    privileged: true
+    networks:
+      sandbox_core:
+        ipv4_address: ${NR_UE3_IP}
+
+networks:
+  sandbox_core:
+    external: true
+    name: sandbox_core

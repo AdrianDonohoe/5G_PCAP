@@ -1,0 +1,27 @@
+[project]
+name = "5gcap"
+version = "0.1.0"
+description = "5G control-plane PCAP analyzer: decode NGAP/NAS and PFCP, map UE flows, compute KPIs"
+requires-python = ">=3.12"
+dependencies = [
+    "pycrate>=0.8.1",
+    "scapy>=2.6.1",
+]
+
+[project.scripts]
+5gcap = "fivegcap.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["fivegcap"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

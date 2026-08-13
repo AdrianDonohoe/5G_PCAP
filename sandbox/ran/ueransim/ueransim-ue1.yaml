@@ -1,0 +1,51 @@
+supi: 'imsi-UE_IMSI'
+mcc: 'MCC'
+mnc: 'MNC'
+
+key: 'UE_KI'
+op: 'UE_OPC'
+opType: 'OPC'
+amf: 'UE_AMF'
+imei: 'UE_IMEI'
+imeiSv: 'UE_IMEISV'
+
+gnbSearchList:
+  - NR_GNB_IP
+
+uacAic:
+  mps: false
+  mcs: false
+
+uacAcc:
+  normalClass: 0
+  class11: false
+  class12: false
+  class13: false
+  class14: false
+  class15: false
+
+sessions:
+  - type: 'IPv4'
+    apn: 'internet'
+    slice:
+      sst: 1
+
+configured-nssai:
+  - sst: 1
+
+default-nssai:
+  - sst: 1
+
+integrity:
+  IA1: true
+  IA2: true
+  IA3: true
+
+ciphering:
+  EA1: true
+  EA2: true
+  EA3: true
+
+integrityMaxRate:
+  uplink: 'full'
+  downlink: 'full'

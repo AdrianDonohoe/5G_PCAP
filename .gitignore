@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Virtual environments
+.venv/
+
+# Generated CLI output
+5gcap/out.json
+
+# Sandbox runtime logs (bind-mounted, root-owned, regenerated on every run)
+sandbox/core/log/*.log
+
+# Claude Code local session settings
+.claude/settings.local.json
+
+# Unrelated graphify-skill inputs/output (other projects, regenerable graph)
+/raw_graphify/
+/graphify-out/

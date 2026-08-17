@@ -1,0 +1,41 @@
+{
+  "built": "2026-08-17T13:20:09.579409+00:00",
+  "specs": {
+    "24501": {
+      "title": "TS 24.501",
+      "token": "j70",
+      "version": "19.7.0",
+      "zip": "24501-j70.zip",
+      "zip_sha256": "45352dc66a24ff49d34a9e276715b63a0c4a1058606776c60b4352d6bee62ece",
+      "docx": [
+        "24501-j70.docx"
+      ],
+      "chunks": 1757,
+      "chars": 5325842
+    },
+    "38413": {
+      "title": "TS 38.413",
+      "token": "j30",
+      "version": "19.3.0",
+      "zip": "38413-j30.zip",
+      "zip_sha256": "5c0d81582b12e9d7aa55dcbabef6550e534674856717bfe8061fbb294597ab51",
+      "docx": [
+        "38413-j30.docx"
+      ],
+      "chunks": 944,
+      "chars": 1362808
+    },
+    "29244": {
+      "title": "TS 29.244",
+      "token": "j60",
+      "version": "19.6.0",
+      "zip": "29244-j60.zip",
+      "zip_sha256": "5972efec3a61a40c4da7534861495e43f88cb94315cb51c5a85997b50636c1c3",
+      "docx": [
+        "29244-j60.docx"
+      ],
+      "chunks": 832,
+      "chars": 2187794
+    }
+  }
+}

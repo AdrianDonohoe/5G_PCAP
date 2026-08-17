@@ -1,0 +1,440 @@
+"""LATS search: MCTS over Actions, with LLM expand/evaluate steps.
+
+ADR-0001: LATS is the central loop; the four tools
+(inspect_decoded_evidence, query_topology, query_3gpp_spec,
+query_episodic_memory) form its execute step's Action space. The structural
+pattern (Node/Tree MCTS with injected expand/execute/evaluate modules)
+follows raw_graphify/dspy_lats.py, minus MLflow and its Python-interpreter
+execute module — here execute is deterministic tool dispatch, not an LLM.
+
+Two deterministic parts keep the search honest, enforced in code rather
+than trusted to the LLM:
+
+- An Action parses to one of the four tools, or to `finalize <Episode
+  JSON>`. Anything else is an unknown action.
+- A node completes only when its finalize Action produces an Episode that
+  validates against the Pydantic schema AND cites at least one Evidence
+  grounded in the decode: a cited (message, ts) must match a decoded
+  message (5e-4 s tolerance — observations print ts to 3 decimals), and a
+  cited cause must equal the decoded one when present. That is ADR-0001's
+  completeness bar ("a Hypothesis with no Evidence is not a valid
+  Hypothesis") made mechanical.
+
+The LLM steps (action proposals, trajectory scoring) default to
+gpt-oss:120b via Groq (ADR-0002), built lazily so importing this module
+never requires GROQ_API_KEY or network. Tests inject stub expand/evaluate
+callables — the suite stays cheap, per ADR-0002.
+"""
+
+import math
+import os
+from dataclasses import dataclass, field
+
+import dspy
+
+from triage.evidence import DecodedCapture
+from triage.memory import Episode, MemoryStore, query_episodic_memory
+from triage.specrag import query_3gpp_spec
+from triage.topology import query_topology
+
+TOOLS = ("inspect", "topology", "spec", "memory", "finalize")
+
+INCIDENT_TYPES = ["auth_failure", "registration_reject",
+                  "registration_timeout", "pdu_session_reject_slice",
+                  "pdu_session_reject_other", "pdu_session_timeout"]
+
+# dspy treats the first segment of the model string as its provider and
+# sends the rest; Groq's own model IDs carry an "openai/" vendor prefix
+# (openai/gpt-oss-120b), hence the doubled prefix. Verified against the
+# live API: bare "gpt-oss-120b" 404s.
+GROQ = ("openai/openai/gpt-oss-120b", "https://api.groq.com/openai/v1")
+
+
+def parse_action(text: str) -> tuple[str, str]:
+    """`TOOL rest` or `TOOL:rest` -> (tool, argument); lenient."""
+    text = text.strip()
+    if not text:
+        return "", ""
+    tool, sep, argument = text.partition(" ")
+    if not sep:
+        tool, sep, argument = text.partition(":")
+    argument = argument.strip().strip("\"'").strip()
+    if argument.startswith("[") and argument.endswith("]"):
+        argument = argument[1:-1].strip()
+    return tool.rstrip(":").lower(), argument
+
+
+def _memory_kwargs(argument: str) -> dict:
+    kwargs = {}
+    for token in argument.split():
+        if "=" not in token:
+            continue
+        key, _, value = token.partition("=")
+        if key not in ("incident_type", "message", "cause", "limit"):
+            continue
+        if key in ("cause", "limit"):
+            try:
+                value = int(value)
+            except ValueError:
+                continue
+        kwargs[key] = value
+    return kwargs
+
+
+def _message_inventory(capture: DecodedCapture) -> dict:
+    """{(name, ts): cause code} for every decoded message in the capture."""
+    inventory = {}
+    for flow in capture.n2.get("flows") or []:
+        for msg in flow.get("messages") or []:
+            for name in (msg.get("ngap"), msg.get("nas"), msg.get("nas_inner")):
+                if name and msg.get("ts") is not None:
+                    cause = msg.get("nas_cause") or {}
+                    inventory[(name, msg["ts"])] = cause.get("code")
+    for msg in capture.n2.get("unassociated") or []:
+        if msg.get("ngap") and msg.get("ts") is not None:
+            inventory[(msg["ngap"], msg["ts"])] = None
+    for msg in (capture.n4 or {}).get("messages") or []:
+        if msg.get("name") and msg.get("ts") is not None:
+            inventory[(msg["name"], msg["ts"])] = None
+    return inventory
+
+
+def _grounded(capture: DecodedCapture, episode: Episode) -> list:
+    """The cited evidence items that match a decoded message exactly."""
+    inventory = _message_inventory(capture)
+    grounded = []
+    for ev in episode.cited_evidence:
+        if ev.ts is None:
+            continue
+        for (name, ts), cause in inventory.items():
+            if name == ev.message and abs(ts - ev.ts) < 5e-4:
+                if ev.cause is not None and cause != ev.cause:
+                    continue  # right message, wrong cause: ungrounded
+                grounded.append(ev)
+                break
+    return grounded
+
+
+def _finalize(capture: DecodedCapture, argument: str) -> tuple[str, Episode | None]:
+    """Validate + ground a finalize Action's Episode JSON."""
+    try:
+        episode = Episode.model_validate_json(argument)
+    except Exception as exc:
+        return (f"finalize rejected: argument is not a valid Episode ({exc}). "
+                f'Expected JSON: {{"incident_type": one of '
+                f"{', '.join(INCIDENT_TYPES)}, \"narrative\": \"...\", "
+                f'"cited_evidence": [{{"message": ..., "cause": ..., '
+                f'"ts": ...}}]}}.', None)
+    grounded = _grounded(capture, episode)
+    if not grounded:
+        return ("finalize rejected: no cited evidence matches a decoded "
+                "message. Cite message names and ts values exactly as shown "
+                "in the observations.", None)
+    return (f"finalize accepted: hypothesis grounded in {len(grounded)} "
+            f"evidence item(s).", episode)
+
+
+def execute_action(capture: DecodedCapture, action: str,
+                   store: MemoryStore | None = None,
+                   spec_index=None) -> tuple[str, Episode | None]:
+    """The execute step: deterministic dispatch of one Action to one tool."""
+    store = store or MemoryStore()
+    tool, argument = parse_action(action)
+    if tool == "inspect":
+        from triage.evidence import inspect_decoded_evidence
+        return inspect_decoded_evidence(capture, argument or "flows"), None
+    if tool == "topology":
+        return query_topology(capture.n2, capture.n4), None
+    if tool == "spec":
+        return query_3gpp_spec(argument or "", index=spec_index), None
+    if tool == "memory":
+        return query_episodic_memory(store, **_memory_kwargs(argument)), None
+    if tool == "finalize":
+        return _finalize(capture, argument)
+    return (f'unknown action "{action}": expected one of {", ".join(TOOLS)}',
+            None)
+
+
+def objective_text(incident: dict) -> str:
+    """The objective the search runs against, from the Incident description."""
+    lines = [f"Explain why the {incident['procedure']} procedure failed for "
+             f"flow {incident['flow_id']} in this decoded 5G capture."]
+    if incident.get("shape"):
+        lines.append(f"Failure shape: {incident['shape']}.")
+    if incident.get("shape") == "no terminal message (timeout)":
+        lines.append("There is no reject message and no terminal procedure "
+                     "record to find: the failure is an absence. Inspect "
+                     "what did arrive, then finalize on that evidence "
+                     "instead of waiting for a reject that never comes.")
+    if incident.get("detail"):
+        lines.append(f"Incident detail: {incident['detail']}.")
+    lines.append("Take one action per step. Actions: "
+                 '"inspect <handle>" (kpis, flows, flow:<id>, flow:<id>:<i>, '
+                 "unassociated[:<i>], n4[:<i>]), \"topology\", "
+                 '"spec <question>", "memory [incident_type=... message=... '
+                 'cause=...]", or "finalize <episode JSON>". '
+                 "Finish with finalize once the evidence supports a root "
+                 "cause; its JSON must have incident_type (one of "
+                 f"{', '.join(INCIDENT_TYPES)}), narrative, and "
+                 "cited_evidence.")
+    return "\n".join(lines)
+
+
+def _field(result, name: str, default):
+    if isinstance(result, dict):
+        return result.get(name, default)
+    return getattr(result, name, default)
+
+
+def _trajectory_text(node) -> str:
+    pairs = node.trajectory()
+    if not pairs:
+        return ""
+    return "\n".join(f"action: {a}\nobservation: {o}" for a, o in pairs)
+
+
+@dataclass
+class Node:
+    action: str
+    depth: int
+    parent: "Node | None" = None
+    observation: str | None = None
+    episode: Episode | None = None
+    children: list = field(default_factory=list)
+    value: float = 0.0
+    reward: float = 0.0
+    visits: int = 0
+    status: str = "incomplete"  # complete | failed | incomplete
+
+    def trajectory(self) -> list[tuple[str, str]]:
+        pairs = self.parent.trajectory() if self.parent else []
+        if not self.action:  # the root node contributes nothing
+            return pairs
+        return pairs + [(self.action, self.observation or "")]
+
+    def backprop(self, reward: float) -> None:
+        self.visits += 1
+        self.value += (reward - self.value) / self.visits
+        if self.parent:
+            self.parent.backprop(reward)
+
+
+def _ucb(parent: Node, child: Node, C: float) -> float:
+    if child.visits == 0:
+        return math.inf
+    if child.status == "failed":
+        return 0.0
+    return child.value / child.visits + \
+        C * math.sqrt(math.log(parent.visits) / child.visits)
+
+
+@dataclass
+class SearchResult:
+    episode: Episode | None
+    reward: float
+    trajectory: list
+    rollouts: int
+
+
+class Tree:
+    """The MCTS tree: rollouts of expand -> execute -> evaluate -> backprop.
+
+    expand(objective, trajectory, n) -> list of Action strings; evaluate
+    (objective, trajectory) -> result with reward/status/reflection fields.
+    """
+
+    def __init__(self, expand, evaluate, execute, C: float = 1.4,
+                 max_depth: int = 3):
+        self.expand = expand
+        self.evaluate = evaluate
+        self.execute = execute
+        self.C = C
+        self.max_depth = max_depth
+        self.exit_on_complete = True
+
+    def _observe_and_evaluate(self, child: Node, objective: str) -> None:
+        observation, episode = self.execute(child.action)
+        child.observation = observation
+        child.episode = episode
+        try:
+            result = self.evaluate(objective, _trajectory_text(child))
+            reward = float(_field(result, "reward", 0.0))
+            status = str(_field(result, "status", "incomplete"))
+        except Exception:
+            reward, status = 0.0, "failed"
+        child.reward = reward
+        # Completeness is deterministic: a grounded finalize completes the
+        # node even if the LLM's status disagrees; the LLM only scores.
+        child.status = ("complete" if episode is not None else
+                        "failed" if status == "failed" else "incomplete")
+        child.backprop(reward)
+
+    def _rollout(self, node: Node, objective: str, n_branches: int) -> None:
+        if node.status == "failed" or node.depth > self.max_depth:
+            node.status = "failed"
+            return
+        if not node.children:
+            try:
+                actions = self.expand(objective, _trajectory_text(node),
+                                      n_branches)
+            except Exception:
+                actions = []
+            seen = set()
+            for action in actions:
+                if action and action not in seen:
+                    seen.add(action)
+                    node.children.append(
+                        Node(action=action, depth=node.depth + 1,
+                             parent=node))
+            if not node.children:
+                node.status = "failed"
+                return
+            for child in node.children:
+                self._observe_and_evaluate(child, objective)
+                if self.exit_on_complete and child.episode is not None:
+                    return
+            return
+        best = max(node.children, key=lambda c: _ucb(node, c, self.C))
+        self._rollout(best, objective, n_branches)
+
+    def _completed(self, node: Node, acc: list) -> None:
+        if node.episode is not None:
+            acc.append(node)
+        for child in node.children:
+            self._completed(child, acc)
+
+    def run(self, objective: str, n_branches: int = 3,
+            max_rollouts: int = 10, exit_on_complete: bool = True
+            ) -> SearchResult:
+        self.exit_on_complete = exit_on_complete
+        root = Node(action="", depth=1)
+        for rollouts in range(1, max_rollouts + 1):
+            self._rollout(root, objective, n_branches)
+            done = []
+            self._completed(root, done)
+            if exit_on_complete and done:
+                break
+        done = []
+        self._completed(root, done)
+        best = max(done, key=lambda n: n.reward) if done else None
+        return SearchResult(episode=best.episode if best else None,
+                            reward=best.reward if best else 0.0,
+                            trajectory=best.trajectory() if best else [],
+                            rollouts=rollouts)
+
+
+class ExpandSignature(dspy.Signature):
+    """You are triaging why a 5G Registration or PDU Session procedure
+    failed, using a decoded capture. Propose n alternative next actions,
+    one per line, in the format TOOL ARGUMENT.
+
+    Tools: inspect <handle> (handles: kpis, flows, flow:<id>, flow:<id>:<i>,
+    unassociated[:<i>], n4[:<i>]), topology, spec <question>,
+    memory [incident_type=... message=... cause=...], or finalize <episode
+    JSON>. finalize is the ONLY way to end the search: propose it as soon
+    as the trajectory contains the failure's key evidence — a reject
+    message with its cause code, a partial flow whose terminal message
+    never arrived, or — for a timeout shape — the last messages that did
+    arrive (there is no reject to wait for). finalize JSON template (copy
+    message names, cause codes and ts values EXACTLY as shown in the
+    observations):
+
+    {"incident_type": "<one of auth_failure, registration_reject,
+    registration_timeout, pdu_session_reject_slice,
+    pdu_session_reject_other, pdu_session_timeout>",
+    "narrative": "<one-sentence root-cause explanation>",
+    "cited_evidence": [{"message": "<decoded message name>",
+    "cause": <code or null>, "ts": <timestamp from observation>}]}
+
+    A cause-bearing reject is usually a terminal symptom, not the root
+    cause: if the trajectory shows an earlier exceptional message (e.g.
+    5GMMAuthenticationFailure), the narrative must explain THAT and cite
+    it as evidence too. Pick the incident_type from the wire shape, not
+    from cause-name keywords: auth_failure when an AuthenticationFailure
+    message appears; registration_reject for a Registration Reject;
+    registration_timeout when no Registration terminal ever arrived;
+    pdu_session_reject_slice for 5GMM STATUS cause 91 (DNN not supported
+    in the slice) — a reject whose cause NAME merely mentions "slice" is
+    NOT the slice type; pdu_session_reject_other for any other PDU
+    Session REJECT (e.g. cause 67); pdu_session_timeout when NO reject
+    exists but cause 90 "Payload was not forwarded" echoes on the UE's
+    repeated request with multi-second gaps. Never repeat an action
+    already in the trajectory, and prefer finalize over more
+    evidence-gathering once the failure's key evidence has been
+    observed."""
+    objective: str = dspy.InputField(desc="The failure to explain")
+    trajectory: str = dspy.InputField(
+        desc="Previous actions and their observations; empty if none")
+    n: int = dspy.InputField(desc="Number of alternative actions to propose")
+    actions: str = dspy.OutputField(desc="One action per line, nothing else")
+
+
+class EvaluateSignature(dspy.Signature):
+    """Score how well this trajectory explains the objective's failure.
+    The trajectory is complete when its finalize action produced a grounded
+    root-cause hypothesis."""
+    objective: str = dspy.InputField(desc="The failure to explain")
+    trajectory: str = dspy.InputField(desc="Actions and observations so far")
+    reward: float = dspy.OutputField(
+        desc="0.0 to 1.0: how far the trajectory supports the ROOT cause "
+             "(why the procedure failed, e.g. an authentication failure), "
+             "not just the terminal reject cause")
+    status: str = dspy.OutputField(
+        desc="one of: complete, failed, incomplete")
+    reflection: str = dspy.OutputField(
+        desc="One sentence: what the trajectory established or lacks")
+
+
+def _groq_lm():
+    key = os.environ.get("GROQ_API_KEY")
+    if not key:
+        raise RuntimeError("GROQ_API_KEY is not set (ADR-0002: no local "
+                           "model fallback)")
+    # Groq serves an OpenAI-compatible API; this route works without a
+    # dspy Groq provider and keeps the model swappable (ADR-0002).
+    lm = dspy.LM(GROQ[0], api_base=GROQ[1], api_key=key, cache=False)
+    dspy.configure(lm=lm)
+    return lm
+
+
+def default_expand():
+    """expand(objective, trajectory, n) -> list of Action strings."""
+    predictor = dspy.Predict(ExpandSignature)
+    _groq_lm()
+
+    def expand(objective: str, trajectory: str, n: int) -> list[str]:
+        result = predictor(objective=objective,
+                           trajectory=trajectory or "(none yet)", n=n)
+        return [line.strip() for line in result.actions.splitlines()
+                if line.strip()][:n]
+    return expand
+
+
+def default_evaluate():
+    """evaluate(objective, trajectory) -> reward/status/reflection."""
+    predictor = dspy.Predict(EvaluateSignature)
+    _groq_lm()
+    return lambda objective, trajectory: predictor(
+        objective=objective, trajectory=trajectory or "(none yet)")
+
+
+def run_lats(capture: DecodedCapture, incident: dict,
+             store: MemoryStore | None = None, spec_index=None,
+             n_branches: int = 3, max_rollouts: int = 10,
+             max_depth: int = 3, expand=None, evaluate=None,
+             C: float = 1.4) -> SearchResult:
+    """Run the LATS search for one Incident; returns the best Hypothesis.
+
+    Raises RuntimeError when expand/evaluate default to the Groq-backed
+    predictors and GROQ_API_KEY is unset (ADR-0002: no local fallback).
+    Mid-search LLM failures degrade inside the tree instead.
+    """
+    store = store or MemoryStore()
+    expand = expand or default_expand()
+    evaluate = evaluate or default_evaluate()
+    tree = Tree(expand, evaluate,
+                execute=lambda action: execute_action(capture, action,
+                                                      store, spec_index),
+                C=C, max_depth=max_depth)
+    return tree.run(objective_text(incident), n_branches=n_branches,
+                    max_rollouts=max_rollouts)

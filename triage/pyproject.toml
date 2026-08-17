@@ -1,0 +1,30 @@
+[project]
+name = "triage"
+version = "0.1.0"
+description = "LLM-agent root-cause hypothesis generation for failed 5G Registration/PDU-session procedures"
+requires-python = ">=3.12"
+dependencies = [
+    "dspy>=3.3.0",
+    "fastembed>=0.8.0",
+    "pydantic>=2.13.4",
+]
+
+[project.scripts]
+triage = "triage.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["triage"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    # scripts/build_corpus.py (3GPP spec corpus build, one-time step)
+    "python-docx>=1.1.0",
+]

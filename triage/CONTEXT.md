@@ -2,7 +2,8 @@
 
 LLM-agent root-cause hypothesis generation for failed 5G Registration and PDU
 Session Activation Procedures, built on top of 5gcap's decode output. Invoked
-one-shot against a single decoded Capture; not a live/streaming monitor.
+one-shot: the CLI consumes a single decoded Capture and the agent runs once
+per failed Incident within it; not a live/streaming monitor.
 Architecture rationale: [`docs/adr/0001-lats-coala-triage-agent.md`](./docs/adr/0001-lats-coala-triage-agent.md).
 
 ## Language
@@ -26,10 +27,13 @@ Produced once per Incident, after the LATS search concludes.
 _Avoid_: diagnosis, answer, result
 
 **incident_type**:
-The canonical category a Hypothesis is classified into (e.g. `auth_failure`,
-`pdu_session_reject_slice`, `registration_timeout`). Maps one-to-one onto the
+The canonical category a Hypothesis is classified into — a closed set of six,
+one per (Procedure × failure shape) combination: `auth_failure`,
+`registration_reject`, `registration_timeout`, `pdu_session_reject_slice`,
+`pdu_session_reject_other`, `pdu_session_timeout`. Maps one-to-one onto the
 sandbox's failure-injection scenario labels, which supply ground truth for
-`type_accuracy`.
+`type_accuracy`. New categories are added only when a real failure shape
+doesn't fit any of these six, not speculatively.
 _Avoid_: category, label, class
 
 **Action**:

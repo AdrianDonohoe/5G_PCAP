@@ -1,0 +1,539 @@
+{
+  "kpis": {
+    "attach_time_ms": 110.68495114644368,
+    "pdu_session_time_ms": 2.505699793497721,
+    "procedure_success_rate": 1.0,
+    "procedure_successes": 6,
+    "procedure_failures": 0
+  },
+  "flows": [
+    {
+      "flow_id": 1,
+      "ran_ue_ngap_id": 1,
+      "amf_ue_ngap_id": 1,
+      "partial": false,
+      "messages": [
+        {
+          "ts": 1786968641.135337,
+          "src_ip": "10.53.0.20",
+          "dst_ip": "10.53.0.11",
+          "ngap": "InitialUEMessage",
+          "kind": "initiatingMessage",
+          "nas": "5GMMRegistrationRequest",
+          "nas_protected": false,
+          "nas_inner": null,
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.149858,
+          "src_ip": "10.53.0.11",
+          "dst_ip": "10.53.0.20",
+          "ngap": "DownlinkNASTransport",
+          "kind": "initiatingMessage",
+          "nas": "5GMMAuthenticationRequest",
+          "nas_protected": false,
+          "nas_inner": null,
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.150536,
+          "src_ip": "10.53.0.20",
+          "dst_ip": "10.53.0.11",
+          "ngap": "UplinkNASTransport",
+          "kind": "initiatingMessage",
+          "nas": "5GMMAuthenticationResponse",
+          "nas_protected": false,
+          "nas_inner": null,
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.155095,
+          "src_ip": "10.53.0.11",
+          "dst_ip": "10.53.0.20",
+          "ngap": "DownlinkNASTransport",
+          "kind": "initiatingMessage",
+          "nas": "5GMMSecProtNASMessage",
+          "nas_protected": true,
+          "nas_inner": "5GMMSecurityModeCommand",
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.15744,
+          "src_ip": "10.53.0.20",
+          "dst_ip": "10.53.0.11",
+          "ngap": "UplinkNASTransport",
+          "kind": "initiatingMessage",
+          "nas": "5GMMSecProtNASMessage",
+          "nas_protected": true,
+          "nas_inner": "5GMMSecurityModeComplete",
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.171376,
+          "src_ip": "10.53.0.11",
+          "dst_ip": "10.53.0.20",
+          "ngap": "InitialContextSetupRequest",
+          "kind": "initiatingMessage",
+          "nas": "5GMMSecProtNASMessage",
+          "nas_protected": true,
+          "nas_inner": "5GMMRegistrationAccept",
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.176843,
+          "src_ip": "10.53.0.20",
+          "dst_ip": "10.53.0.11",
+          "ngap": "InitialContextSetupResponse",
+          "kind": "successfulOutcome",
+          "nas": null,
+          "nas_protected": null,
+          "nas_inner": null,
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.176843,
+          "src_ip": "10.53.0.20",
+          "dst_ip": "10.53.0.11",
+          "ngap": "UplinkNASTransport",
+          "kind": "initiatingMessage",
+          "nas": "5GMMSecProtNASMessage",
+          "nas_protected": true,
+          "nas_inner": "5GMMRegistrationComplete",
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.176843,
+          "src_ip": "10.53.0.20",
+          "dst_ip": "10.53.0.11",
+          "ngap": "UplinkNASTransport",
+          "kind": "initiatingMessage",
+          "nas": "5GMMSecProtNASMessage",
+          "nas_protected": true,
+          "nas_inner": "5GSMPDUSessionEstabRequest",
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.177267,
+          "src_ip": "10.53.0.11",
+          "dst_ip": "10.53.0.20",
+          "ngap": "DownlinkNASTransport",
+          "kind": "initiatingMessage",
+          "nas": "5GMMSecProtNASMessage",
+          "nas_protected": true,
+          "nas_inner": "5GMMConfigurationUpdateCommand",
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.194091,
+          "src_ip": "10.53.0.11",
+          "dst_ip": "10.53.0.20",
+          "ngap": "PDUSessionResourceSetupRequest",
+          "kind": "initiatingMessage",
+          "nas": null,
+          "nas_protected": null,
+          "nas_inner": null,
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.196525,
+          "src_ip": "10.53.0.20",
+          "dst_ip": "10.53.0.11",
+          "ngap": "PDUSessionResourceSetupResponse",
+          "kind": "successfulOutcome",
+          "nas": null,
+          "nas_protected": null,
+          "nas_inner": null,
+          "nas_cause": null,
+          "unparsed": null
+        }
+      ],
+      "procedures": [
+        {
+          "kind": "registration",
+          "start_ts": 1786968641.135337,
+          "end_ts": 1786968641.171376,
+          "start_msg": "5GMMRegistrationRequest",
+          "end_msg": "5GMMRegistrationAccept",
+          "outcome": "accept",
+          "duration_ms": 36.038875579833984
+        },
+        {
+          "kind": "pdu_session_est",
+          "start_ts": 1786968641.194091,
+          "end_ts": 1786968641.196525,
+          "start_msg": "PDUSessionResourceSetupRequest",
+          "end_msg": "PDUSessionResourceSetupResponse",
+          "outcome": "accept",
+          "duration_ms": 2.4340152740478516
+        }
+      ]
+    },
+    {
+      "flow_id": 2,
+      "ran_ue_ngap_id": 2,
+      "amf_ue_ngap_id": 2,
+      "partial": false,
+      "messages": [
+        {
+          "ts": 1786968641.171416,
+          "src_ip": "10.53.0.20",
+          "dst_ip": "10.53.0.11",
+          "ngap": "InitialUEMessage",
+          "kind": "initiatingMessage",
+          "nas": "5GMMRegistrationRequest",
+          "nas_protected": false,
+          "nas_inner": null,
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.176808,
+          "src_ip": "10.53.0.11",
+          "dst_ip": "10.53.0.20",
+          "ngap": "DownlinkNASTransport",
+          "kind": "initiatingMessage",
+          "nas": "5GMMAuthenticationRequest",
+          "nas_protected": false,
+          "nas_inner": null,
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.177622,
+          "src_ip": "10.53.0.20",
+          "dst_ip": "10.53.0.11",
+          "ngap": "UplinkNASTransport",
+          "kind": "initiatingMessage",
+          "nas": "5GMMAuthenticationResponse",
+          "nas_protected": false,
+          "nas_inner": null,
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.185647,
+          "src_ip": "10.53.0.11",
+          "dst_ip": "10.53.0.20",
+          "ngap": "DownlinkNASTransport",
+          "kind": "initiatingMessage",
+          "nas": "5GMMSecProtNASMessage",
+          "nas_protected": true,
+          "nas_inner": "5GMMSecurityModeCommand",
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.194137,
+          "src_ip": "10.53.0.20",
+          "dst_ip": "10.53.0.11",
+          "ngap": "UplinkNASTransport",
+          "kind": "initiatingMessage",
+          "nas": "5GMMSecProtNASMessage",
+          "nas_protected": true,
+          "nas_inner": "5GMMSecurityModeComplete",
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.210292,
+          "src_ip": "10.53.0.11",
+          "dst_ip": "10.53.0.20",
+          "ngap": "InitialContextSetupRequest",
+          "kind": "initiatingMessage",
+          "nas": "5GMMSecProtNASMessage",
+          "nas_protected": true,
+          "nas_inner": "5GMMRegistrationAccept",
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.217853,
+          "src_ip": "10.53.0.20",
+          "dst_ip": "10.53.0.11",
+          "ngap": "InitialContextSetupResponse",
+          "kind": "successfulOutcome",
+          "nas": null,
+          "nas_protected": null,
+          "nas_inner": null,
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.419155,
+          "src_ip": "10.53.0.20",
+          "dst_ip": "10.53.0.11",
+          "ngap": "UplinkNASTransport",
+          "kind": "initiatingMessage",
+          "nas": "5GMMSecProtNASMessage",
+          "nas_protected": true,
+          "nas_inner": "5GMMRegistrationComplete",
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.419155,
+          "src_ip": "10.53.0.20",
+          "dst_ip": "10.53.0.11",
+          "ngap": "UplinkNASTransport",
+          "kind": "initiatingMessage",
+          "nas": "5GMMSecProtNASMessage",
+          "nas_protected": true,
+          "nas_inner": "5GSMPDUSessionEstabRequest",
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.419895,
+          "src_ip": "10.53.0.11",
+          "dst_ip": "10.53.0.20",
+          "ngap": "DownlinkNASTransport",
+          "kind": "initiatingMessage",
+          "nas": "5GMMSecProtNASMessage",
+          "nas_protected": true,
+          "nas_inner": "5GMMConfigurationUpdateCommand",
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.435999,
+          "src_ip": "10.53.0.11",
+          "dst_ip": "10.53.0.20",
+          "ngap": "PDUSessionResourceSetupRequest",
+          "kind": "initiatingMessage",
+          "nas": null,
+          "nas_protected": null,
+          "nas_inner": null,
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.438456,
+          "src_ip": "10.53.0.20",
+          "dst_ip": "10.53.0.11",
+          "ngap": "PDUSessionResourceSetupResponse",
+          "kind": "successfulOutcome",
+          "nas": null,
+          "nas_protected": null,
+          "nas_inner": null,
+          "nas_cause": null,
+          "unparsed": null
+        }
+      ],
+      "procedures": [
+        {
+          "kind": "registration",
+          "start_ts": 1786968641.171416,
+          "end_ts": 1786968641.210292,
+          "start_msg": "5GMMRegistrationRequest",
+          "end_msg": "5GMMRegistrationAccept",
+          "outcome": "accept",
+          "duration_ms": 38.87605667114258
+        },
+        {
+          "kind": "pdu_session_est",
+          "start_ts": 1786968641.435999,
+          "end_ts": 1786968641.438456,
+          "start_msg": "PDUSessionResourceSetupRequest",
+          "end_msg": "PDUSessionResourceSetupResponse",
+          "outcome": "accept",
+          "duration_ms": 2.457141876220703
+        }
+      ]
+    },
+    {
+      "flow_id": 3,
+      "ran_ue_ngap_id": 3,
+      "amf_ue_ngap_id": 3,
+      "partial": false,
+      "messages": [
+        {
+          "ts": 1786968641.185691,
+          "src_ip": "10.53.0.20",
+          "dst_ip": "10.53.0.11",
+          "ngap": "InitialUEMessage",
+          "kind": "initiatingMessage",
+          "nas": "5GMMRegistrationRequest",
+          "nas_protected": false,
+          "nas_inner": null,
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.196504,
+          "src_ip": "10.53.0.11",
+          "dst_ip": "10.53.0.20",
+          "ngap": "DownlinkNASTransport",
+          "kind": "initiatingMessage",
+          "nas": "5GMMAuthenticationRequest",
+          "nas_protected": false,
+          "nas_inner": null,
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.210343,
+          "src_ip": "10.53.0.20",
+          "dst_ip": "10.53.0.11",
+          "ngap": "UplinkNASTransport",
+          "kind": "initiatingMessage",
+          "nas": "5GMMAuthenticationResponse",
+          "nas_protected": false,
+          "nas_inner": null,
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.217816,
+          "src_ip": "10.53.0.11",
+          "dst_ip": "10.53.0.20",
+          "ngap": "DownlinkNASTransport",
+          "kind": "initiatingMessage",
+          "nas": "5GMMSecProtNASMessage",
+          "nas_protected": true,
+          "nas_inner": "5GMMSecurityModeCommand",
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.419155,
+          "src_ip": "10.53.0.20",
+          "dst_ip": "10.53.0.11",
+          "ngap": "UplinkNASTransport",
+          "kind": "initiatingMessage",
+          "nas": "5GMMSecProtNASMessage",
+          "nas_protected": true,
+          "nas_inner": "5GMMSecurityModeComplete",
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.442831,
+          "src_ip": "10.53.0.11",
+          "dst_ip": "10.53.0.20",
+          "ngap": "InitialContextSetupRequest",
+          "kind": "initiatingMessage",
+          "nas": "5GMMSecProtNASMessage",
+          "nas_protected": true,
+          "nas_inner": "5GMMRegistrationAccept",
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.443211,
+          "src_ip": "10.53.0.20",
+          "dst_ip": "10.53.0.11",
+          "ngap": "InitialContextSetupResponse",
+          "kind": "successfulOutcome",
+          "nas": null,
+          "nas_protected": null,
+          "nas_inner": null,
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.650203,
+          "src_ip": "10.53.0.20",
+          "dst_ip": "10.53.0.11",
+          "ngap": "UplinkNASTransport",
+          "kind": "initiatingMessage",
+          "nas": "5GMMSecProtNASMessage",
+          "nas_protected": true,
+          "nas_inner": "5GMMRegistrationComplete",
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.650203,
+          "src_ip": "10.53.0.20",
+          "dst_ip": "10.53.0.11",
+          "ngap": "UplinkNASTransport",
+          "kind": "initiatingMessage",
+          "nas": "5GMMSecProtNASMessage",
+          "nas_protected": true,
+          "nas_inner": "5GSMPDUSessionEstabRequest",
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.650651,
+          "src_ip": "10.53.0.11",
+          "dst_ip": "10.53.0.20",
+          "ngap": "DownlinkNASTransport",
+          "kind": "initiatingMessage",
+          "nas": "5GMMSecProtNASMessage",
+          "nas_protected": true,
+          "nas_inner": "5GMMConfigurationUpdateCommand",
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.661806,
+          "src_ip": "10.53.0.11",
+          "dst_ip": "10.53.0.20",
+          "ngap": "PDUSessionResourceSetupRequest",
+          "kind": "initiatingMessage",
+          "nas": null,
+          "nas_protected": null,
+          "nas_inner": null,
+          "nas_cause": null,
+          "unparsed": null
+        },
+        {
+          "ts": 1786968641.664432,
+          "src_ip": "10.53.0.20",
+          "dst_ip": "10.53.0.11",
+          "ngap": "PDUSessionResourceSetupResponse",
+          "kind": "successfulOutcome",
+          "nas": null,
+          "nas_protected": null,
+          "nas_inner": null,
+          "nas_cause": null,
+          "unparsed": null
+        }
+      ],
+      "procedures": [
+        {
+          "kind": "registration",
+          "start_ts": 1786968641.185691,
+          "end_ts": 1786968641.442831,
+          "start_msg": "5GMMRegistrationRequest",
+          "end_msg": "5GMMRegistrationAccept",
+          "outcome": "accept",
+          "duration_ms": 257.1399211883545
+        },
+        {
+          "kind": "pdu_session_est",
+          "start_ts": 1786968641.661806,
+          "end_ts": 1786968641.664432,
+          "start_msg": "PDUSessionResourceSetupRequest",
+          "end_msg": "PDUSessionResourceSetupResponse",
+          "outcome": "accept",
+          "duration_ms": 2.6259422302246094
+        }
+      ]
+    }
+  ],
+  "unassociated": [
+    {
+      "ts": 1786968640.787762,
+      "ngap": "NGSetupRequest",
+      "unparsed": null
+    },
+    {
+      "ts": 1786968640.819884,
+      "ngap": "NGSetupResponse",
+      "unparsed": null
+    }
+  ]
+}

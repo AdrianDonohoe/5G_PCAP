@@ -12,6 +12,15 @@ __pycache__/
 # Sandbox runtime logs (bind-mounted, root-owned, regenerated on every run)
 sandbox/core/log/*.log
 
+# 3GPP spec archive cache (regenerable via triage/scripts/build_corpus.py)
+triage/corpus/cache/
+
+# Triage episodic memory (runtime records, written post-hoc at consolidation)
+triage/memory/
+
+# Triage eval results (runtime records; regenerated on every explicit run)
+triage/evals/results.json
+
 # Claude Code local session settings
 .claude/settings.local.json
 

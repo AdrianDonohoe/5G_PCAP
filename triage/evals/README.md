@@ -1,0 +1,52 @@
+# triage evals
+
+The offline eval harness for `type_accuracy` and `diagnosis_quality`
+(CONTEXT.md), over the six labeled failure-injection fixtures in
+`5gcap/tests/fixtures/`. Runs explicitly — never inside the default pytest
+suite, because every fixture run costs real Groq calls (ADR-0002).
+
+## Run
+
+```
+uv run python evals/run_eval.py                 # all 6 fixtures x 3 runs
+uv run python evals/run_eval.py --fixtures auth_failure --runs 1   # smoke
+uv run python evals/run_eval.py --resume        # skip runs already in --out
+```
+
+Results checkpoint to `--out` (default `results.json`) after every fixture,
+so an interrupted run resumes with `--resume` instead of re-paying the
+completed fixture-runs. `GROQ_API_KEY` must be set. Decoding uses 5gcap's
+CLI via subprocess (the JSON contract), so 5gcap's uv environment must be
+synced.
+
+## Targets
+
+- `type_accuracy` >= 5/6 — fixture-level mean of exact `incident_type`
+  matches against the fixture's `.label.json`.
+- `diagnosis_quality` >= 0.7 — run-level mean of four 0–1 dimension scores
+  (Accuracy, Specificity, Evidence, Causality) from an LLM judge; a run
+  whose search completes no Hypothesis scores 0.0.
+
+## Design notes
+
+- **Judge model**: `qwen/qwen3.6-27b` on the same Groq account — a model
+  family distinct from the generator (gpt-oss:120b), which is what
+  "distinct" exists for. The task's original pick (llama-3.3-70b-versatile)
+  is not served on this account; the `JUDGE` constant in `run_eval.py`
+  swaps it in one place.
+- **Judge grounding**: the judge scores each Hypothesis against the
+  Incident's decoded messages (a flow brief), not against the ground-truth
+  label — Accuracy means "no invented facts", so `diagnosis_quality` does
+  not duplicate `type_accuracy`. The brief carries the flow's time span and
+  absence of procedure records, and the rubric treats the missing terminal
+  message as the mechanism for timeout shapes — without that, the judge
+  penalizes correct timeout hypotheses for not naming which element failed
+  when the decode cannot distinguish them.
+- **Episodic memory reset**: each fixture run uses a fresh temp
+  `episodes.jsonl`, so consolidation never dedups across runs.
+- **The `spec` Action** may trigger the embedding-index build on the first
+  eval run (~15–30 min CPU on this VM); afterwards it loads from
+  `triage/corpus/cache/`.
+- **Results** land in `results.json` (gitignored): per-run
+  `type_accuracy`, per-Hypothesis dimension scores + judge comments, and a
+  summary block with the targets.

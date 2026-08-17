@@ -12,6 +12,14 @@ open-ended investigation, not a fixed computation.
 
 accepted
 
+(Amended 2026-08-14 after sandbox verification: the "NAS decryption scope"
+option below proved unnecessary — the sandbox AMF's `ciphering_order` starts
+with NEA0, so its SecurityModeCommand always selects 5G-EA0 (null cipher):
+post-SMC NAS payloads are integrity-protected but plaintext. `5gcap` parses
+them directly (MAC-strip + inner parse, driven by the SMC's selected
+algorithms); CryptoMobile/real-cipher support is deferred until a capture
+actually carries one.)
+
 ## Considered Options
 
 **Orchestration shape** — a fixed pipeline (decode → topology → LATS →
@@ -45,7 +53,12 @@ scope. Without it, most Reject messages' actual cause codes are invisible
 almost nothing concrete to reason from on the most common failure shape.
 Feasible now specifically because sandbox-generated captures use known test
 keys; decrypting arbitrary real-world captures with unknown keys remains out
-of scope.
+of scope. Amended 2026-08-14: sandbox verification showed the Open5GS AMF
+always selects 5G-EA0 here (`ciphering_order` starts with NEA0), so
+protected payloads are plaintext and cause codes are readable by stripping
+the MAC — the CryptoMobile path is deferred. The SMC-selected algorithm
+still drives `5gcap`'s parsing, so a real cipher degrades to an honest
+unparsed note rather than a bogus parse.
 
 **Eval timing** — `diagnosis_quality` (LLM-as-judge) runs only in an offline
 eval harness against sandbox-labeled fixtures, never during a live

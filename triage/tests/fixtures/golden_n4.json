@@ -1,0 +1,271 @@
+{
+  "messages": [
+    {
+      "ts": 1786968635.253334,
+      "src_ip": "10.53.0.12",
+      "dst_ip": "10.53.0.13",
+      "src_port": 8805,
+      "dst_port": 8805,
+      "name": "PFCP Heartbeat Request",
+      "seq": 192,
+      "seid": null,
+      "cause": null,
+      "unparsed": null
+    },
+    {
+      "ts": 1786968635.253535,
+      "src_ip": "10.53.0.13",
+      "dst_ip": "10.53.0.12",
+      "src_port": 8805,
+      "dst_port": 8805,
+      "name": "PFCP Heartbeat Response",
+      "seq": 192,
+      "seid": null,
+      "cause": null,
+      "unparsed": null
+    },
+    {
+      "ts": 1786968635.253575,
+      "src_ip": "10.53.0.13",
+      "dst_ip": "10.53.0.12",
+      "src_port": 8805,
+      "dst_port": 8805,
+      "name": "PFCP Heartbeat Request",
+      "seq": 1266,
+      "seid": null,
+      "cause": null,
+      "unparsed": null
+    },
+    {
+      "ts": 1786968635.253652,
+      "src_ip": "10.53.0.12",
+      "dst_ip": "10.53.0.13",
+      "src_port": 8805,
+      "dst_port": 8805,
+      "name": "PFCP Heartbeat Response",
+      "seq": 1266,
+      "seid": null,
+      "cause": null,
+      "unparsed": null
+    },
+    {
+      "ts": 1786968641.191453,
+      "src_ip": "10.53.0.12",
+      "dst_ip": "10.53.0.13",
+      "src_port": 8805,
+      "dst_port": 8805,
+      "name": "PFCP Session Establishment Request",
+      "seq": 193,
+      "seid": 0,
+      "cause": null,
+      "unparsed": null
+    },
+    {
+      "ts": 1786968641.191781,
+      "src_ip": "10.53.0.13",
+      "dst_ip": "10.53.0.12",
+      "src_port": 8805,
+      "dst_port": 8805,
+      "name": "PFCP Session Establishment Response",
+      "seq": 193,
+      "seid": 517,
+      "cause": "Request accepted",
+      "unparsed": null
+    },
+    {
+      "ts": 1786968641.199982,
+      "src_ip": "10.53.0.12",
+      "dst_ip": "10.53.0.13",
+      "src_port": 8805,
+      "dst_port": 8805,
+      "name": "PFCP Session Modification Request",
+      "seq": 194,
+      "seid": 3925,
+      "cause": null,
+      "unparsed": null
+    },
+    {
+      "ts": 1786968641.200178,
+      "src_ip": "10.53.0.13",
+      "dst_ip": "10.53.0.12",
+      "src_port": 8805,
+      "dst_port": 8805,
+      "name": "PFCP Session Modification Response",
+      "seq": 194,
+      "seid": 517,
+      "cause": "Request accepted",
+      "unparsed": null
+    },
+    {
+      "ts": 1786968641.433922,
+      "src_ip": "10.53.0.12",
+      "dst_ip": "10.53.0.13",
+      "src_port": 8805,
+      "dst_port": 8805,
+      "name": "PFCP Session Establishment Request",
+      "seq": 195,
+      "seid": 0,
+      "cause": null,
+      "unparsed": null
+    },
+    {
+      "ts": 1786968641.434362,
+      "src_ip": "10.53.0.13",
+      "dst_ip": "10.53.0.12",
+      "src_port": 8805,
+      "dst_port": 8805,
+      "name": "PFCP Session Establishment Response",
+      "seq": 195,
+      "seid": 3327,
+      "cause": "Request accepted",
+      "unparsed": null
+    },
+    {
+      "ts": 1786968641.439238,
+      "src_ip": "10.53.0.12",
+      "dst_ip": "10.53.0.13",
+      "src_port": 8805,
+      "dst_port": 8805,
+      "name": "PFCP Session Modification Request",
+      "seq": 196,
+      "seid": 2792,
+      "cause": null,
+      "unparsed": null
+    },
+    {
+      "ts": 1786968641.440248,
+      "src_ip": "10.53.0.13",
+      "dst_ip": "10.53.0.12",
+      "src_port": 8805,
+      "dst_port": 8805,
+      "name": "PFCP Session Modification Response",
+      "seq": 196,
+      "seid": 3327,
+      "cause": "Request accepted",
+      "unparsed": null
+    },
+    {
+      "ts": 1786968641.660124,
+      "src_ip": "10.53.0.12",
+      "dst_ip": "10.53.0.13",
+      "src_port": 8805,
+      "dst_port": 8805,
+      "name": "PFCP Session Establishment Request",
+      "seq": 197,
+      "seid": 0,
+      "cause": null,
+      "unparsed": null
+    },
+    {
+      "ts": 1786968641.660547,
+      "src_ip": "10.53.0.13",
+      "dst_ip": "10.53.0.12",
+      "src_port": 8805,
+      "dst_port": 8805,
+      "name": "PFCP Session Establishment Response",
+      "seq": 197,
+      "seid": 1750,
+      "cause": "Request accepted",
+      "unparsed": null
+    },
+    {
+      "ts": 1786968641.665592,
+      "src_ip": "10.53.0.12",
+      "dst_ip": "10.53.0.13",
+      "src_port": 8805,
+      "dst_port": 8805,
+      "name": "PFCP Session Modification Request",
+      "seq": 198,
+      "seid": 2978,
+      "cause": null,
+      "unparsed": null
+    },
+    {
+      "ts": 1786968641.66582,
+      "src_ip": "10.53.0.13",
+      "dst_ip": "10.53.0.12",
+      "src_port": 8805,
+      "dst_port": 8805,
+      "name": "PFCP Session Modification Response",
+      "seq": 198,
+      "seid": 1750,
+      "cause": "Request accepted",
+      "unparsed": null
+    }
+  ],
+  "procedures": [
+    {
+      "kind": "heartbeat",
+      "start_ts": 1786968635.253334,
+      "end_ts": 1786968635.253535,
+      "start_msg": "PFCP Heartbeat Request",
+      "end_msg": "PFCP Heartbeat Response",
+      "outcome": "unknown",
+      "duration_ms": 0.2009868621826172
+    },
+    {
+      "kind": "heartbeat",
+      "start_ts": 1786968635.253575,
+      "end_ts": 1786968635.253652,
+      "start_msg": "PFCP Heartbeat Request",
+      "end_msg": "PFCP Heartbeat Response",
+      "outcome": "unknown",
+      "duration_ms": 0.07700920104980469
+    },
+    {
+      "kind": "session_establishment",
+      "start_ts": 1786968641.191453,
+      "end_ts": 1786968641.191781,
+      "start_msg": "PFCP Session Establishment Request",
+      "end_msg": "PFCP Session Establishment Response",
+      "outcome": "accept",
+      "duration_ms": 0.32806396484375
+    },
+    {
+      "kind": "session_modification",
+      "start_ts": 1786968641.199982,
+      "end_ts": 1786968641.200178,
+      "start_msg": "PFCP Session Modification Request",
+      "end_msg": "PFCP Session Modification Response",
+      "outcome": "accept",
+      "duration_ms": 0.19598007202148438
+    },
+    {
+      "kind": "session_establishment",
+      "start_ts": 1786968641.433922,
+      "end_ts": 1786968641.434362,
+      "start_msg": "PFCP Session Establishment Request",
+      "end_msg": "PFCP Session Establishment Response",
+      "outcome": "accept",
+      "duration_ms": 0.4398822784423828
+    },
+    {
+      "kind": "session_modification",
+      "start_ts": 1786968641.439238,
+      "end_ts": 1786968641.440248,
+      "start_msg": "PFCP Session Modification Request",
+      "end_msg": "PFCP Session Modification Response",
+      "outcome": "accept",
+      "duration_ms": 1.0099411010742188
+    },
+    {
+      "kind": "session_establishment",
+      "start_ts": 1786968641.660124,
+      "end_ts": 1786968641.660547,
+      "start_msg": "PFCP Session Establishment Request",
+      "end_msg": "PFCP Session Establishment Response",
+      "outcome": "accept",
+      "duration_ms": 0.4229545593261719
+    },
+    {
+      "kind": "session_modification",
+      "start_ts": 1786968641.665592,
+      "end_ts": 1786968641.66582,
+      "start_msg": "PFCP Session Modification Request",
+      "end_msg": "PFCP Session Modification Response",
+      "outcome": "accept",
+      "duration_ms": 0.22792816162109375
+    }
+  ],
+  "unpaired_requests": 0
+}

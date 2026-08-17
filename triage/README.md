@@ -9,7 +9,9 @@ The domain language (Incident, Evidence, Hypothesis, incident_type,
 Trajectory, Topology, Episode, type_accuracy, diagnosis_quality) lives in
 [CONTEXT.md](./CONTEXT.md). Architecture and implementation choices are in
 the ADRs ([0001](./docs/adr/0001-lats-coala-triage-agent.md),
-[0002](./docs/adr/0002-triage-v1-implementation-choices.md)).
+[0002](./docs/adr/0002-triage-v1-implementation-choices.md)). One real
+invocation, decision by decision, is in
+[docs/invocation-walkthrough.md](./docs/invocation-walkthrough.md).
 
 ## Layout
 

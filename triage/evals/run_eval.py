@@ -34,7 +34,7 @@ import dspy
 from triage.evidence import load_capture
 from triage.incidents import detect_incidents
 from triage.memory import MemoryStore
-from triage.search import run_lats
+from triage.search import GROQ, run_lats
 
 FIXTURES = ["auth_failure", "registration_reject", "registration_timeout",
             "pdu_session_reject_slice", "pdu_session_reject_other",
@@ -309,6 +309,8 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 1
     judge = default_judge()
+    gen_id, judge_id = (m.split("/", 1)[1] for m in (GROQ[0], JUDGE[0]))
+    print(f"generator: {gen_id} | judge: {judge_id}", flush=True)
 
     def checkpoint() -> None:
         # write what has been computed so far: a crash mid-run must not

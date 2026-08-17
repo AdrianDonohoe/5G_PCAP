@@ -45,6 +45,37 @@ Output: `../5gcap/tests/fixtures/sandbox_n2.pcap` (NGAP/SCTP) and
 `git diff`/`git status` before committing; re-run `capture.sh` if a run comes
 back with a `[PARTIAL]` flow (rare capture-start race).
 
+### Failure-injection scenarios
+
+`./capture.sh --scenario <name>` applies a failure to UE1 only (UE2/UE3 stay
+golden in the same capture) and writes `<name>.pcap` plus a sibling
+`<name>.label.json` ground-truth label for the triage eval harness:
+
+| scenario | injection | expected wire shape |
+|---|---|---|
+| `auth_failure` | wrong Ki on UE1 | SYNCH FAILURE #21, then REGISTRATION REJECT #111 (protocol error) |
+| `registration_reject` | unprovisioned IMSI on UE1 | REGISTRATION REJECT, cause #7 |
+| `registration_timeout` | `docker pause sandbox_amf` | RegistrationRequest left open, UE retries (2 flows) |
+| `pdu_session_reject_slice` | UE1 second session on SST 2 | SST 1 session accepts; 5GMM STATUS #91 on SST 2 |
+| `pdu_session_reject_other` | UE1 APN `otherdnn` (UDM-only DNN) | 5GSM REJECT, cause #67 |
+| `pdu_session_timeout` | blackhole SMF SBI port (in-netns iptables) | sm-context create hangs ~11 s, then 5GMM #90, UE retries |
+
+Two shapes differ from the 3GPP textbook on purpose, because they are what
+Open5GS actually emits (verified in the generated fixtures): `auth_failure`
+ends in REGISTRATION REJECT #111, not AUTHENTICATION REJECT #20, and
+`pdu_session_reject_other` yields 5GSM REJECT #67, not #27. The
+`pdu_session_timeout` hang is bounded by Open5GS's hardcoded 11 s AMF SBI
+deadline (`time.message.duration` + 1 s — no amf.yaml key overrides it for
+the AMF); pausing the SMF container does not produce a hang at all (the NRF
+purges a heartbeat-less NF within ~10 s and the AMF answers instantly), which
+is why the scenario blackholes the SMF's SBI port from inside its own netns
+instead — heartbeats keep flowing, data-path requests time out.
+
+Timeout scenarios start only `gnb`+`ue1`, capture a fixed ~45 s window, and
+exit 0 — the missing terminal message *is* the expected outcome. All scenario
+mutations (UE1 config, UDM seed variant, container pause, SMF blackhole rule)
+are reverted on exit.
+
 For interactive poking: `docker compose logs -f <service>` in `core/`, or
 `docker compose exec <service> bash`.
 

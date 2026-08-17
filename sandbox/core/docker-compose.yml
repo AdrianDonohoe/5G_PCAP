@@ -186,6 +186,10 @@ services:
     volumes:
       - ./smf:/mnt/smf
       - ./log:/open5gs/install/var/log/open5gs
+    # NET_ADMIN lets capture.sh blackhole AMF->SMF SBI traffic from inside the
+    # SMF netns for the pdu_session_timeout injection (see sandbox/capture.sh).
+    cap_add:
+      - NET_ADMIN
     networks:
       sandbox_core:
         ipv4_address: ${SMF_IP}

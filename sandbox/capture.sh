@@ -1,10 +1,35 @@
 #!/bin/bash
-# Generates fresh sandbox_n2.pcap / sandbox_n4.pcap fixtures for 5gcap:
-# brings up an ephemeral UERANSIM RAN against the (already-running,
+# Generates fresh fixture captures for 5gcap from the Open5GS + UERANSIM
+# sandbox: brings up an ephemeral UERANSIM RAN against the (already-running,
 # persistent) Open5GS core, captures N2 (NGAP/SCTP) and N4 (PFCP) on the
-# shared core bridge with port filters, waits for all UEs to complete
-# Registration + PDU session establishment, then tears the RAN back down.
-# See docs/adr/0002-open5gs-ueransim-sandbox.md.
+# shared core bridge, waits for all UEs to complete Registration + PDU
+# session establishment, then tears the RAN back down.
+#
+# Without --scenario (golden path) this writes the fixed-named
+# sandbox_n2.pcap / sandbox_n4.pcap used by 5gcap's test suite.
+#
+# With --scenario <name>, a failure-injection scenario is applied to UE1
+# only (UE2/UE3 stay untouched as golden flows in the same capture) and the
+# output is <name>.pcap plus a sibling <name>.label.json = {incident_type,
+# scenario}, supplying ground truth for the triage eval harness. A scenario
+# is a UE1-config override plus optional UDM seed variant (pre-hook) and
+# optional docker pause (timeout shapes), and maps one-to-one onto the six
+# incident_types in ../triage/CONTEXT.md:
+#
+#   auth_failure              wrong Ki on UE1      -> SYNCH FAILURE #21, then
+#                                                    REGISTRATION REJECT #111
+#   registration_reject       unprovisioned IMSI   -> REGISTRATION REJECT #7
+#   registration_timeout      pause sandbox_amf    -> registration left open,
+#                                                    UE retries (2 flows)
+#   pdu_session_reject_slice  UE1 second session   -> 5GMM STATUS #91 on the
+#                             on SST 2             SST 2 request, retried
+#   pdu_session_reject_other  UE1 APN "otherdnn"   -> 5GSM REJECT #67
+#                             (DNN seeded in UDM only, absent from SMF)
+#   pdu_session_timeout       blackhole SMF SBI    -> sm-context creates hang
+#                                                    ~11s then 5GMM #90
+#
+# See ../docs/adr/0002-open5gs-ueransim-sandbox.md and
+# ../triage/docs/adr/0002-triage-v1-implementation-choices.md.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -13,13 +38,50 @@ RAN_DIR="$SCRIPT_DIR/ran"
 FIXTURES_DIR="$SCRIPT_DIR/../5gcap/tests/fixtures"
 NETWORK_NAME=sandbox_core
 UE_SERVICES=(ue1 ue2 ue3)
+UE1_IMSI=999700000000001
+UE1_WRONG_KI=565B5CE8B199B49FAA5F0A2EE238A6BC  # real Ki starts 465B..., flipped
+UE1_WRONG_IMSI=999700000000099                # absent from the UDM
 TIMEOUT_SECS=60
+TIMEOUT_SCENARIO_SECS=45
+
+SCENARIO=""
+if [[ $# -eq 2 && "$1" == "--scenario" ]]; then
+  SCENARIO="$2"
+elif [[ $# -gt 0 ]]; then
+  echo "Usage: $0 [--scenario auth_failure|registration_reject|registration_timeout|pdu_session_reject_slice|pdu_session_reject_other|pdu_session_timeout]" >&2
+  exit 2
+fi
+case "$SCENARIO" in
+  ""|auth_failure|registration_reject|registration_timeout|pdu_session_reject_slice|pdu_session_reject_other|pdu_session_timeout) ;;
+  *)
+    echo "Error: unknown scenario '$SCENARIO'" >&2
+    exit 2 ;;
+esac
+
+UE1_YAML="$RAN_DIR/ueransim/ueransim-ue1.yaml"
+UE1_YAML_BAK="$RAN_DIR/ueransim/ueransim-ue1.yaml.scenario-bak"
+DB_URI="mongodb://$(grep ^MONGO_IP= "$CORE_DIR/.env" | cut -d= -f2)/open5gs"
+PAUSED=""
+UDM_SEEDED=""
+SMF_BLACKHOLED=""
 
 cleanup() {
   set +e
   [[ -n "${N2_PID:-}" ]] && kill "$N2_PID" 2>/dev/null
   [[ -n "${N4_PID:-}" ]] && kill "$N4_PID" 2>/dev/null
   wait "${N2_PID:-}" "${N4_PID:-}" 2>/dev/null
+  [[ -n "$PAUSED" ]] && docker unpause "$PAUSED" 2>/dev/null
+  if [[ -n "$SMF_BLACKHOLED" ]]; then
+    docker exec sandbox_smf iptables -D INPUT -p tcp --dport 7777 -j DROP \
+      2>/dev/null
+  fi
+  if [[ -n "$UDM_SEEDED" ]]; then
+    # Remove the otherdnn seed variant so the golden state is restored.
+    (cd "$CORE_DIR" && docker compose exec -T nrf mongosh "$DB_URI" --quiet \
+      --eval 'db.subscribers.updateOne({imsi:"'"$UE1_IMSI"'"},{$pull:{"slice.0.session":{name:"otherdnn"}}})' \
+      >/dev/null 2>&1)
+  fi
+  [[ -f "$UE1_YAML_BAK" ]] && mv -f "$UE1_YAML_BAK" "$UE1_YAML"
   (cd "$RAN_DIR" && docker compose down)
 }
 trap cleanup EXIT
@@ -29,43 +91,213 @@ if ! docker network inspect "$NETWORK_NAME" >/dev/null 2>&1; then
   exit 1
 fi
 
+sed_ue1() {
+  # sed the ueransim-ue1.yaml template (restored in cleanup); the init
+  # script's env substitution only fills placeholders, so replaced literals
+  # survive into the running config.
+  cp "$UE1_YAML" "$UE1_YAML_BAK"
+  sed -i "$@" "$UE1_YAML"
+}
+
+restart_amf_fresh() {
+  # Restart the AMF so its UE/SM context is fresh: otherwise the first
+  # registration can stall on stale state from previous captures. Wait for
+  # the NEW process and for it to have associated the SMF (both checks
+  # only look at log lines added after the restart, hence the line-count
+  # marker -- --since would match stale lines).
+  local mark amf_ready smf_known
+  mark=$(docker compose --project-directory "$CORE_DIR" logs --no-color amf \
+    2>/dev/null | wc -l)
+  docker restart sandbox_amf
+  amf_ready=0
+  for _ in $(seq 1 60); do
+    # NOTE: grep without -q: -q exits at the first match, which SIGPIPEs the
+    # upstream tail and, under `set -o pipefail`, makes the pipeline report
+    # failure even when the pattern WAS found.
+    if docker compose --project-directory "$CORE_DIR" logs --no-color amf \
+        2>/dev/null | tail -n +$((mark + 1)) \
+        | grep "AMF initialize...done" >/dev/null
+    then amf_ready=1; break; fi
+    sleep 1
+  done
+  [[ "$amf_ready" = 1 ]] || { echo "Error: AMF did not become ready" >&2; exit 1; }
+  smf_known=0
+  for _ in $(seq 1 20); do
+    if docker compose --project-directory "$CORE_DIR" logs --no-color amf \
+        2>/dev/null | tail -n +$((mark + 1)) \
+        | grep "\[SMF\] NFInstance associated" >/dev/null
+    then smf_known=1; break; fi
+    sleep 1
+  done
+  [[ "$smf_known" = 1 ]] || { echo "Error: AMF did not associate the SMF" >&2; exit 1; }
+}
+
+apply_scenario() {
+  case "$SCENARIO" in
+    auth_failure)
+      # Wrong Ki: the UE's RES no longer matches the core's XRES. On the
+      # wire this shows as 5GMMAuthenticationFailure (SYNCH failure #21)
+      # followed by REGISTRATION REJECT #111 (protocol error), not the
+      # textbook AUTHENTICATION REJECT #20 -- Open5GS answers the RES
+      # mismatch this way.
+      sed_ue1 "s|UE_KI|$UE1_WRONG_KI|"
+      ;;
+    registration_reject)
+      # IMSI absent from UDM -> REGISTRATION REJECT (cause #7).
+      sed_ue1 "s|UE_IMSI|$UE1_WRONG_IMSI|"
+      ;;
+    pdu_session_reject_slice)
+      # UE1 asks for two PDU sessions: SST 1 (golden, succeeds) and SST 2,
+      # which the core has no slice for -> 5GMM STATUS #91 on the SST 2
+      # request (the AMF never forwards it to an SMF); the UE retries it a
+      # couple of times. A single-session SST 2 config would fail the same
+      # way but with no golden PDU accept in the flow.
+      cp "$UE1_YAML" "$UE1_YAML_BAK"
+      python3 - "$UE1_YAML" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+s = s.replace("""sessions:
+  - type: 'IPv4'
+    apn: 'internet'
+    slice:
+      sst: 1
+""", """sessions:
+  - type: 'IPv4'
+    apn: 'internet'
+    slice:
+      sst: 1
+  - type: 'IPv4'
+    apn: 'internet'
+    slice:
+      sst: 2
+""")
+open(p, "w").write(s)
+PY
+      ;;
+    pdu_session_reject_other)
+      # Seed variant: "otherdnn" is subscribed in UDM for UE1 but the SMF
+      # has no such DNN -> the AMF forwards the request and the SMF answers
+      # 5GSM REJECT #67 (insufficient resources for specific slice and DNN);
+      # the UE retries the rejected request once.
+      sed_ue1 "s|apn: 'internet'|apn: 'otherdnn'|"
+      (cd "$CORE_DIR" && docker compose exec -T nrf mongosh "$DB_URI" --quiet \
+        --eval 'db.subscribers.updateOne({imsi:"'"$UE1_IMSI"'"},{$pull:{"slice.0.session":{name:"otherdnn"}}})' \
+        >/dev/null)
+      (cd "$CORE_DIR" && docker compose exec -T nrf /open5gs/misc/db/open5gs-dbctl \
+        --db_uri="$DB_URI" update_apn "$UE1_IMSI" otherdnn 0 >/dev/null)
+      UDM_SEEDED=1
+      ;;
+  esac
+}
+
+if [[ -n "$SCENARIO" ]]; then
+  N2_OUT="$FIXTURES_DIR/$SCENARIO.pcap"
+else
+  N2_OUT="$FIXTURES_DIR/sandbox_n2.pcap"
+  N4_OUT="$FIXTURES_DIR/sandbox_n4.pcap"
+fi
+
 NET_ID=$(docker network inspect "$NETWORK_NAME" --format '{{.Id}}')
 BRIDGE="br-${NET_ID:0:12}"
 
-echo "Capturing N2 (SCTP/38412) and N4 (PFCP/8805) on $BRIDGE..."
-tcpdump -i "$BRIDGE" -w "$FIXTURES_DIR/sandbox_n2.pcap" 'sctp port 38412' &
+echo "Capturing N2 (SCTP/38412) on $BRIDGE..."
+tcpdump -i "$BRIDGE" -w "$N2_OUT" 'sctp port 38412' &
 N2_PID=$!
-tcpdump -i "$BRIDGE" -w "$FIXTURES_DIR/sandbox_n4.pcap" 'udp port 8805' &
-N4_PID=$!
-sleep 3  # let both tcpdump processes attach to the bridge before any RAN traffic starts
+if [[ -n "${N4_OUT:-}" ]]; then
+  tcpdump -i "$BRIDGE" -w "$N4_OUT" 'udp port 8805' &
+  N4_PID=$!
+fi
+sleep 3  # let tcpdump attach to the bridge before any RAN traffic starts
 
-echo "Starting ephemeral RAN (gNB + ${#UE_SERVICES[@]} UEs)..."
-(cd "$RAN_DIR" && docker compose up -d --force-recreate)
+# Fresh AMF state so the first registration does not stall on stale UE
+# context left over from earlier captures (every scenario run and the
+# golden run get this).
+restart_amf_fresh
 
-echo "Waiting for Registration + PDU session establishment on all UEs (timeout ${TIMEOUT_SECS}s)..."
-deadline=$(( $(date +%s) + TIMEOUT_SECS ))
-pending=("${UE_SERVICES[@]}")
-while [[ ${#pending[@]} -gt 0 ]]; do
-  if (( $(date +%s) > deadline )); then
-    echo "Error: timed out waiting for UE(s) to complete: ${pending[*]}" >&2
-    exit 1
+apply_scenario
+
+if [[ "$SCENARIO" == "registration_timeout" ]]; then
+  # The gNB must complete NGSetup first so the capture contains a live SCTP
+  # association carrying the UE's RegistrationRequest; only then is the AMF
+  # frozen, leaving every request unanswered. The UE re-attempts
+  # registration on its own timers, so the capture holds two flows (one per
+  # attempt) -- the expected "left open" signature.
+  echo "Starting gNB..."
+  (cd "$RAN_DIR" && docker compose up -d --force-recreate gnb)
+  sleep 8
+  echo "Pausing sandbox_amf (registration will never complete)..."
+  docker pause sandbox_amf
+  PAUSED=sandbox_amf
+  (cd "$RAN_DIR" && docker compose up -d --force-recreate ue1)
+  sleep "$TIMEOUT_SCENARIO_SECS"
+  echo "Capture window done (registration timeout is the expected outcome)."
+elif [[ "$SCENARIO" == "pdu_session_timeout" ]]; then
+  # Registration does not involve the SMF, so it completes normally. The
+  # injection blackholes the SMF's SBI port from inside the SMF netns (the
+  # smf service runs with cap_add NET_ADMIN, see core/docker-compose.yml):
+  # the SMF keeps heartbeating to the NRF so the AMF still discovers it,
+  # but every sm-context create hangs until the AMF's SBI deadline and then
+  # fails with 5GMM #90 (~11s: Open5GS hardcodes time.message.duration to
+  # 10s for the AMF, and the deadline is duration + 1s; no amf.yaml key
+  # overrides it). Pausing the SMF container does NOT work: the NRF purges
+  # a heartbeat-less NF within ~10s and the AMF drops it from its cache,
+  # which turns the failure into an instant #90 instead of a timeout.
+  echo "Blackholing the SMF SBI port (PDU session requests will time out)..."
+  docker exec sandbox_smf iptables -A INPUT -p tcp --dport 7777 -j DROP
+  SMF_BLACKHOLED=1
+  (cd "$RAN_DIR" && docker compose up -d --force-recreate gnb ue1)
+  sleep "$TIMEOUT_SCENARIO_SECS"
+  echo "Capture window done (PDU session timeout is the expected outcome)."
+else
+  echo "Starting ephemeral RAN (gNB + ${#UE_SERVICES[@]} UEs)..."
+  (cd "$RAN_DIR" && docker compose up -d --force-recreate)
+
+  if [[ -n "$SCENARIO" ]]; then
+    # UE1 is the injected failure; wait for the two golden UEs instead.
+    wait_ues=(ue2 ue3)
+  else
+    wait_ues=("${UE_SERVICES[@]}")
   fi
-  still_pending=()
-  for svc in "${pending[@]}"; do
-    if ! (cd "$RAN_DIR" && docker compose logs "$svc" 2>/dev/null) | grep -q "PDU Session establishment is successful"; then
-      still_pending+=("$svc")
+  echo "Waiting for Registration + PDU session establishment (timeout ${TIMEOUT_SECS}s)..."
+  deadline=$(( $(date +%s) + TIMEOUT_SECS ))
+  pending=("${wait_ues[@]}")
+  while [[ ${#pending[@]} -gt 0 ]]; do
+    if (( $(date +%s) > deadline )); then
+      echo "Error: timed out waiting for UE(s) to complete: ${pending[*]}" >&2
+      exit 1
     fi
+    still_pending=()
+    for svc in "${pending[@]}"; do
+      # grep without -q (see restart_amf_fresh: -q's early exit SIGPIPEs the
+      # upstream command and pipefail turns a match into a failure).
+      if ! (cd "$RAN_DIR" && docker compose logs "$svc" 2>/dev/null) | grep "PDU Session establishment is successful" >/dev/null; then
+        still_pending+=("$svc")
+      fi
+    done
+    pending=("${still_pending[@]}")
+    [[ ${#pending[@]} -gt 0 ]] && sleep 1
   done
-  pending=("${still_pending[@]}")
-  [[ ${#pending[@]} -gt 0 ]] && sleep 1
-done
-echo "All UEs completed Registration + PDU session establishment."
+  echo "All golden UEs completed Registration + PDU session establishment."
 
-sleep 1  # drain any trailing capture-complete signaling before we stop tcpdump
-kill "$N2_PID" "$N4_PID" 2>/dev/null
-wait "$N2_PID" "$N4_PID" 2>/dev/null
+  sleep 1  # drain any trailing capture-complete signaling before we stop tcpdump
+fi
+
+# Teardown must never abort the script: `wait` returns 143 for a SIGTERMed
+# tcpdump, and N4_PID is unset on scenario runs (an empty argument to
+# kill/wait fails under `set -e` before the label block can run).
+kill "$N2_PID" 2>/dev/null || true
+[[ -n "${N4_PID:-}" ]] && kill "$N4_PID" 2>/dev/null || true
+wait "$N2_PID" 2>/dev/null || true
+[[ -n "${N4_PID:-}" ]] && wait "$N4_PID" 2>/dev/null || true
 unset N2_PID N4_PID
 
+if [[ -n "$SCENARIO" ]]; then
+  printf '{"incident_type": "%s", "scenario": "%s"}\n' "$SCENARIO" "$SCENARIO" \
+    > "$FIXTURES_DIR/$SCENARIO.label.json"
+fi
+
 echo "Wrote:"
-echo "  $FIXTURES_DIR/sandbox_n2.pcap"
-echo "  $FIXTURES_DIR/sandbox_n4.pcap"
+echo "  $N2_OUT"
+[[ -n "${N4_OUT:-}" ]] && echo "  $N4_OUT"
+[[ -n "$SCENARIO" ]] && echo "  $FIXTURES_DIR/$SCENARIO.label.json"

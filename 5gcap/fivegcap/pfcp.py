@@ -40,10 +40,17 @@ class PfcpMsg:
     cause_name: str | None = None
     ies: dict = field(default_factory=dict)  # IE type -> value
     unparsed: str | None = None
+    src_ip: str | None = None
+    dst_ip: str | None = None
+    src_port: int | None = None
+    dst_port: int | None = None
 
 
-def decode(ts: float, data: bytes) -> PfcpMsg:
-    m = PfcpMsg(ts=ts, raw=data)
+def decode(ts: float, data: bytes,
+           src_ip: str | None = None, dst_ip: str | None = None,
+           src_port: int | None = None, dst_port: int | None = None) -> PfcpMsg:
+    m = PfcpMsg(ts=ts, raw=data, src_ip=src_ip, dst_ip=dst_ip,
+                src_port=src_port, dst_port=dst_port)
     try:
         msg, err = parse_PFCP(data)
         if msg is None:

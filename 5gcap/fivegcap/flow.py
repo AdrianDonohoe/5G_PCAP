@@ -49,10 +49,17 @@ class Flow:
     partial: bool
     messages: list = field(default_factory=list)   # (NgapMsg, NasMsg|None)
     procedures: list = field(default_factory=list)
+    ciph_algo: int | None = None  # selected by the flow's SecurityModeCommand
 
 
-def _nas_of(msg: NgapMsg):
-    return nas_decode(msg.nas_pdu) if msg.nas_pdu else None
+def _nas_of(msg: NgapMsg, f: Flow):
+    if not msg.nas_pdu:
+        return None
+    nas = nas_decode(msg.nas_pdu, ciph_algo=f.ciph_algo)
+    if f.ciph_algo is None and nas.ciph_algo is not None:
+        # The SMC carries the selected algorithms; later messages follow it.
+        f.ciph_algo = nas.ciph_algo
+    return nas
 
 
 def build_flows(msgs: list[NgapMsg]) -> tuple[list[Flow], list[NgapMsg]]:
@@ -109,7 +116,7 @@ def build_flows(msgs: list[NgapMsg]) -> tuple[list[Flow], list[NgapMsg]]:
         f = flow_for(ng)
         if f.amf_ue_id is None and ng.amf_ue_id is not None:
             f.amf_ue_id = ng.amf_ue_id
-        nas = _nas_of(ng)
+        nas = _nas_of(ng, f)
         f.messages.append((ng, nas))
         if ng.name in (
             "UEContextReleaseRequest",
@@ -121,6 +128,26 @@ def build_flows(msgs: list[NgapMsg]) -> tuple[list[Flow], list[NgapMsg]]:
             # stale InitialUEMessage pairing with a later cycle's setup).
             ngap_starts.pop((f.flow_id, "registration"), None)
             ngap_starts.pop((f.flow_id, "pdu_session_est"), None)
+        # NAS-level procedures close before the NGAP fallback check runs, so
+        # a NAS terminal outcome carried by the NGAP end message (e.g. a
+        # RegistrationAccept on the InitialContextSetupRequest) suppresses
+        # the fallback instead of duplicating the procedure.
+        if nas is not None and nas.name is not None and not nas.unparsed:
+            name = nas.inner or nas.name
+            if name == REG_START or name == PDU_START:
+                open_procs[(f.flow_id, name)] = Procedure(
+                    kind="registration" if name == REG_START else "pdu_session_est",
+                    start_ts=ng.ts,
+                    start_msg=name,
+                )
+            elif name in REG_END or name in PDU_END:
+                pkey = (f.flow_id, REG_START if name in REG_END else PDU_START)
+                proc = open_procs.pop(pkey, None)
+                if proc is not None:
+                    proc.end_ts = ng.ts
+                    proc.end_msg = name
+                    proc.outcome = "accept" if name.endswith("Accept") else "reject"
+                    f.procedures.append(proc)
         if ng.name == NGAP_ATTACH_START:
             ngap_starts.setdefault((f.flow_id, "registration"), []).append(
                 Procedure(kind="registration", start_ts=ng.ts, start_msg=ng.name)
@@ -133,21 +160,4 @@ def build_flows(msgs: list[NgapMsg]) -> tuple[list[Flow], list[NgapMsg]]:
             )
         elif ng.name in NGAP_PDU_END:
             complete_ngap(f, "pdu_session_est", ng.name, NGAP_PDU_END[ng.name], ng.ts)
-        if nas is None or nas.name is None or nas.unparsed:
-            continue
-        name = nas.inner or nas.name
-        if name == REG_START or name == PDU_START:
-            open_procs[(f.flow_id, name)] = Procedure(
-                kind="registration" if name == REG_START else "pdu_session_est",
-                start_ts=ng.ts,
-                start_msg=name,
-            )
-        elif name in REG_END or name in PDU_END:
-            pkey = (f.flow_id, REG_START if name in REG_END else PDU_START)
-            proc = open_procs.pop(pkey, None)
-            if proc is not None:
-                proc.end_ts = ng.ts
-                proc.end_msg = name
-                proc.outcome = "accept" if name.endswith("Accept") else "reject"
-                f.procedures.append(proc)
     return order, unassociated

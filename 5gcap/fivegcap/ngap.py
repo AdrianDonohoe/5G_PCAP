@@ -21,10 +21,14 @@ class NgapMsg:
     nas_pdu: bytes | None = None
     ies: dict = field(default_factory=dict)  # IE name -> value
     unparsed: str | None = None      # decode failure note
+    src_ip: str | None = None
+    dst_ip: str | None = None
 
 
-def decode(ts: float, assoc: tuple, stream: int, data: bytes) -> NgapMsg:
-    m = NgapMsg(ts=ts, assoc=assoc, stream=stream, raw=data)
+def decode(ts: float, assoc: tuple, stream: int, data: bytes,
+           src_ip: str | None = None, dst_ip: str | None = None) -> NgapMsg:
+    m = NgapMsg(ts=ts, assoc=assoc, stream=stream, raw=data,
+                src_ip=src_ip, dst_ip=dst_ip)
     try:
         NGAP_D.NGAP_PDU.from_aper(data)
         val = NGAP_D.NGAP_PDU.get_val()

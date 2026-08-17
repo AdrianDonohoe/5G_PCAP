@@ -25,13 +25,17 @@ def test_ngap_fallback_procedures():
     kinds = [p.kind for p in f.procedures]
     assert kinds == ["registration", "pdu_session_est"]
     reg = f.procedures[0]
-    # NAS terminal is protected in this capture; the NGAP carriers pair instead.
+    # The registration terminal is integrity-protected but plaintext, so the
+    # NAS pair is the more precise measurement (same timestamps as the NGAP
+    # carriers that hold it).
     assert (reg.start_msg, reg.end_msg, reg.outcome) == (
-        "InitialUEMessage",
-        "InitialContextSetupRequest",
+        "5GMMRegistrationRequest",
+        "5GMMRegistrationAccept",
         "accept",
     )
     pdu = f.procedures[1]
+    # The PDU terminal stays invisible (ciphering unknown in this capture);
+    # the NGAP carriers pair instead.
     assert (pdu.start_msg, pdu.end_msg, pdu.outcome) == (
         "PDUSessionResourceSetupRequest",
         "PDUSessionResourceSetupResponse",

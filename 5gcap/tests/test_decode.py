@@ -21,8 +21,9 @@ def analyze():
 
 def test_retransmissions_dropped():
     raw, *_ = analyze()
-    # 369 raw NGAP chunks, 62 of them retransmissions
-    assert len(raw) == 307
+    # 370 raw NGAP chunks (one arrives bundled with another DATA chunk in a
+    # single SCTP packet), 62 of them retransmissions
+    assert len(raw) == 308
 
 
 def test_decode_never_fatal():

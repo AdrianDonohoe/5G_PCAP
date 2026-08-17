@@ -20,8 +20,14 @@ N4_FIXTURE = Path(__file__).parent / "fixtures" / "sandbox_n4.pcap"
 def test_n2_decodes_and_computes_kpis():
     raw = read_capture(str(N2_FIXTURE))
     assert raw, "no NGAP messages decoded from sandbox_n2.pcap"
-    msgs = [ngap_decode(m.ts, m.assoc, m.stream, m.data) for m in raw]
+    msgs = [ngap_decode(m.ts, m.assoc, m.stream, m.data, m.src_ip, m.dst_ip)
+            for m in raw]
     flows, unassociated = build_flows(msgs)
+
+    # N2 endpoint IPs: gNB 10.53.0.20 <-> AMF 10.53.0.11
+    n2_ips = {"10.53.0.20", "10.53.0.11"}
+    for m in msgs:
+        assert m.src_ip in n2_ips and m.dst_ip in n2_ips
 
     assert len(flows) == 3
     for f in flows:
@@ -29,6 +35,17 @@ def test_n2_decodes_and_computes_kpis():
         kinds = [p.kind for p in f.procedures]
         assert kinds == ["registration", "pdu_session_est"]
         assert all(p.outcome == "accept" for p in f.procedures)
+        # Post-SMC NAS is integrity-protected but not encrypted (the AMF
+        # selected 5G-EA0), so every protected payload must expose its
+        # plaintext inner, including the RegistrationAccept terminal outcome.
+        inner_names = {nas.inner for _, nas in f.messages if nas and nas.inner}
+        assert {"5GMMSecurityModeCommand", "5GMMSecurityModeComplete",
+                "5GMMRegistrationAccept"} <= inner_names
+        assert any(nas.ciph_algo == 0 for _, nas in f.messages if nas)
+        for _, nas in f.messages:
+            if nas and nas.protected:
+                assert nas.inner is not None and nas.unparsed is None, \
+                    f"protected payload undecoded in flow {f.flow_id}: {nas}"
 
     kpi = compute(flows)
     assert kpi.success_rate == 1.0
@@ -41,9 +58,16 @@ def test_n2_decodes_and_computes_kpis():
 def test_n4_decodes_and_pairs_procedures():
     raw = read_pfcp_capture(str(N4_FIXTURE))
     assert raw, "no PFCP messages decoded from sandbox_n4.pcap"
-    msgs = [pfcp_decode(m.ts, m.data) for m in raw]
+    msgs = [pfcp_decode(m.ts, m.data, m.src_ip, m.dst_ip, m.src_port, m.dst_port)
+            for m in raw]
 
     assert all(m.unparsed is None for m in msgs)
+
+    # N4 endpoint IPs: SMF 10.53.0.12 <-> UPF 10.53.0.13
+    n4_ips = {"10.53.0.12", "10.53.0.13"}
+    for m in msgs:
+        assert m.src_ip in n4_ips and m.dst_ip in n4_ips
+        assert m.src_port == 8805 and m.dst_port == 8805
 
     procedures, unpaired = pair_procedures(msgs)
     assert unpaired == []

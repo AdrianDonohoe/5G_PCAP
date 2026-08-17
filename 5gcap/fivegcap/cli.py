@@ -14,7 +14,8 @@ from .output import print_trace, write_json, print_pfcp_trace, write_pfcp_json
 def analyze(path: str, json_out: str | None) -> int:
     raw = read_capture(path)
     if raw:
-        msgs = [ngap_decode(m.ts, m.assoc, m.stream, m.data) for m in raw]
+        msgs = [ngap_decode(m.ts, m.assoc, m.stream, m.data, m.src_ip, m.dst_ip)
+                for m in raw]
         flows, unassociated = build_flows(msgs)
         kpi = compute(flows)
         print_trace(flows, kpi, unassociated)
@@ -24,7 +25,8 @@ def analyze(path: str, json_out: str | None) -> int:
         return 0
     pfcp_raw = read_pfcp_capture(path)
     if pfcp_raw:
-        pfcp_msgs = [pfcp_decode(m.ts, m.data) for m in pfcp_raw]
+        pfcp_msgs = [pfcp_decode(m.ts, m.data, m.src_ip, m.dst_ip, m.src_port, m.dst_port)
+                     for m in pfcp_raw]
         print_pfcp_trace(pfcp_msgs)
         if json_out:
             write_pfcp_json(pfcp_msgs, json_out)

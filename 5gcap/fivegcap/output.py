@@ -29,6 +29,8 @@ def print_trace(flows: list[Flow], kpi: KpiResult, unassociated: list[NgapMsg]) 
                 nas_name = f"  NAS: {nas.name or '?'}"
                 if nas.protected:
                     nas_name += " (protected" + (f", inner={nas.inner})" if nas.inner else ")")
+                if nas.cause_name:
+                    nas_name += f" cause={nas.cause_name}"
                 if nas.unparsed:
                     nas_name += f" [unparsed: {nas.unparsed}]"
             unparsed = f" [unparsed: {ng.unparsed}]" if ng.unparsed else ""
@@ -92,11 +94,17 @@ def to_dict(flows: list[Flow], kpi: KpiResult, unassociated: list[NgapMsg]) -> d
             "messages": [
                 {
                     "ts": ng.ts,
+                    "src_ip": ng.src_ip,
+                    "dst_ip": ng.dst_ip,
                     "ngap": ng.name,
                     "kind": ng.kind,
                     "nas": (nas.name if nas else None),
                     "nas_protected": (nas.protected if nas else None),
                     "nas_inner": (nas.inner if nas else None),
+                    "nas_cause": (
+                        {"code": nas.cause, "name": nas.cause_name}
+                        if nas and nas.cause is not None else None
+                    ),
                     "unparsed": ng.unparsed or (nas.unparsed if nas else None),
                 }
                 for ng, nas in f.messages
@@ -142,6 +150,10 @@ def to_pfcp_dict(msgs: list[PfcpMsg]) -> dict:
         "messages": [
             {
                 "ts": m.ts,
+                "src_ip": m.src_ip,
+                "dst_ip": m.dst_ip,
+                "src_port": m.src_port,
+                "dst_port": m.dst_port,
                 "name": m.name,
                 "seq": m.seq,
                 "seid": m.seid,

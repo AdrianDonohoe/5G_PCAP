@@ -1,0 +1,328 @@
+{
+  "schema_version": 1,
+  "mode": "agent",
+  "template_type": "agent",
+  "style": 2,
+  "width": 1000,
+  "height": 760,
+  "title": "5G_PCAP: from capture to verdict",
+  "subtitle": "the LLM proposes, the code disposes · one pipeline, three components",
+  "window_controls": true,
+  "meta_center": "5G_PCAP · ARCHITECTURE",
+  "meta_right": "STYLE-2 · DARK TERMINAL",
+  "containers": [
+    {
+      "id": "decode",
+      "x": 30,
+      "y": 90,
+      "width": 940,
+      "height": 140,
+      "label": "Deterministic (code): decode + detect + objective"
+    },
+    {
+      "id": "search",
+      "x": 30,
+      "y": 270,
+      "width": 940,
+      "height": 290,
+      "label": "LATS search (gpt-oss-120b via Groq): MCTS over actions"
+    },
+    {
+      "id": "output",
+      "x": 30,
+      "y": 600,
+      "width": 940,
+      "height": 110,
+      "label": "Consolidation + eval judge (qwen3.6-27b)"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "pcap",
+      "kind": "folder",
+      "x": 50,
+      "y": 140,
+      "width": 120,
+      "height": 48,
+      "label": "capture.pcap",
+      "fill": "#3f2a00",
+      "stroke": "#f59e0b",
+      "line_stroke": "#fcd34d"
+    },
+    {
+      "id": "fivegcap",
+      "kind": "rect",
+      "x": 220,
+      "y": 140,
+      "width": 150,
+      "height": 48,
+      "label": "5gcap analyze --json",
+      "sublabel": "NGAP · NAS · PFCP",
+      "fill": "#111827",
+      "stroke": "#f97316"
+    },
+    {
+      "id": "detect",
+      "kind": "rect",
+      "x": 420,
+      "y": 140,
+      "width": 150,
+      "height": 48,
+      "label": "detect_incidents",
+      "sublabel": "fixed wire shapes",
+      "fill": "#111827",
+      "stroke": "#f97316"
+    },
+    {
+      "id": "objective",
+      "kind": "speech",
+      "x": 620,
+      "y": 130,
+      "width": 170,
+      "height": 60,
+      "label": "search objective",
+      "sublabel": "+ memory context",
+      "fill": "#0f172a",
+      "stroke": "#38bdf8",
+      "flat": true
+    },
+    {
+      "id": "expand",
+      "kind": "double_rect",
+      "x": 60,
+      "y": 320,
+      "width": 150,
+      "height": 110,
+      "label": "expand (LLM)",
+      "sublabel": "propose actions",
+      "fill": "#111827",
+      "stroke": "#34d399",
+      "glow": "green"
+    },
+    {
+      "id": "execute",
+      "kind": "rect",
+      "x": 280,
+      "y": 320,
+      "width": 150,
+      "height": 48,
+      "label": "execute (code)",
+      "sublabel": "dispatch · ground finalize",
+      "fill": "#111827",
+      "stroke": "#f97316"
+    },
+    {
+      "id": "evaluate",
+      "kind": "rect",
+      "x": 280,
+      "y": 420,
+      "width": 150,
+      "height": 48,
+      "label": "evaluate (LLM)",
+      "sublabel": "score trajectory",
+      "fill": "#111827",
+      "stroke": "#34d399"
+    },
+    {
+      "id": "backprop",
+      "kind": "hexagon",
+      "x": 500,
+      "y": 370,
+      "width": 130,
+      "height": 70,
+      "label": "backprop (code)",
+      "sublabel": "UCB1 · ≤10 rollouts",
+      "fill": "#111827",
+      "stroke": "#a855f7",
+      "glow": "purple"
+    },
+    {
+      "id": "episode",
+      "kind": "speech",
+      "x": 700,
+      "y": 370,
+      "width": 160,
+      "height": 70,
+      "label": "grounded Episode",
+      "sublabel": "schema ✓ · evidence ✓",
+      "fill": "#0f172a",
+      "stroke": "#34d399",
+      "flat": true,
+      "glow": "green"
+    },
+    {
+      "id": "memory",
+      "kind": "folder",
+      "x": 60,
+      "y": 650,
+      "width": 150,
+      "height": 48,
+      "label": "episodes.jsonl",
+      "sublabel": "seeds future searches",
+      "fill": "#3f2a00",
+      "stroke": "#f59e0b",
+      "line_stroke": "#fcd34d"
+    },
+    {
+      "id": "stdout",
+      "kind": "terminal",
+      "x": 280,
+      "y": 650,
+      "width": 150,
+      "height": 48,
+      "label": "stdout JSON",
+      "sublabel": "hypothesis · reward · rollouts",
+      "fill": "#111111",
+      "stroke": "#475569",
+      "header_fill": "#222222"
+    },
+    {
+      "id": "judge",
+      "kind": "double_rect",
+      "x": 500,
+      "y": 650,
+      "width": 160,
+      "height": 48,
+      "label": "judge — qwen3.6-27b",
+      "sublabel": "distinct from generator",
+      "fill": "#111827",
+      "stroke": "#34d399",
+      "glow": "green"
+    },
+    {
+      "id": "scores",
+      "kind": "speech",
+      "x": 720,
+      "y": 650,
+      "width": 160,
+      "height": 48,
+      "label": "scores",
+      "sublabel": "acc · spec · evid · causal",
+      "fill": "#0f172a",
+      "stroke": "#34d399",
+      "flat": true,
+      "glow": "green"
+    }
+  ],
+  "arrows": [
+    {
+      "id": "e1",
+      "source": "pcap",
+      "target": "fivegcap",
+      "source_port": "right",
+      "target_port": "left",
+      "flow": "data"
+    },
+    {
+      "id": "e2",
+      "source": "fivegcap",
+      "target": "detect",
+      "source_port": "right",
+      "target_port": "left",
+      "flow": "write"
+    },
+    {
+      "id": "e3",
+      "source": "detect",
+      "target": "objective",
+      "source_port": "right",
+      "target_port": "left",
+      "flow": "data"
+    },
+    {
+      "id": "e4",
+      "source": "objective",
+      "target": "expand",
+      "source_port": "bottom",
+      "target_port": "top",
+      "flow": "control",
+      "label": "objective"
+    },
+    {
+      "id": "e5",
+      "source": "expand",
+      "target": "execute",
+      "source_port": "right",
+      "target_port": "left",
+      "flow": "control"
+    },
+    {
+      "id": "e6",
+      "source": "execute",
+      "target": "evaluate",
+      "source_port": "bottom",
+      "target_port": "top",
+      "flow": "data"
+    },
+    {
+      "id": "e7",
+      "source": "evaluate",
+      "target": "backprop",
+      "source_port": "right",
+      "target_port": "left",
+      "flow": "data"
+    },
+    {
+      "id": "e8",
+      "source": "backprop",
+      "target": "episode",
+      "source_port": "right",
+      "target_port": "left",
+      "flow": "control"
+    },
+    {
+      "id": "e9",
+      "source": "backprop",
+      "target": "expand",
+      "source_port": "top",
+      "target_port": "left",
+      "flow": "feedback",
+      "label": "next rollout"
+    },
+    {
+      "id": "e10",
+      "source": "episode",
+      "target": "stdout",
+      "source_port": "bottom",
+      "target_port": "top",
+      "flow": "write",
+      "label": "hypothesis"
+    },
+    {
+      "id": "e11",
+      "source": "stdout",
+      "target": "memory",
+      "source_port": "left",
+      "target_port": "right",
+      "flow": "write"
+    },
+    {
+      "id": "e12",
+      "source": "stdout",
+      "target": "judge",
+      "source_port": "right",
+      "target_port": "left",
+      "flow": "control"
+    },
+    {
+      "id": "e13",
+      "source": "judge",
+      "target": "scores",
+      "source_port": "right",
+      "target_port": "left",
+      "flow": "control"
+    },
+    {
+      "id": "e14",
+      "source": "memory",
+      "target": "objective",
+      "source_port": "bottom",
+      "target_port": "right",
+      "flow": "feedback",
+      "label": "memory context"
+    }
+  ],
+  "composition": {
+    "profile": "standard"
+  }
+}

@@ -1,4 +1,4 @@
-# The LLM Proposes, the Code Disposes
+# The LLM Proposes, the Code Disposes: A 5G Triage Agent
 
 *A deterministic decoder, a failure-injection lab, and a tree-search agent that explains 5G failures — with every citation checked against the packet capture.*
 
@@ -12,24 +12,9 @@ I've spent a lot of those hours myself, and I kept noticing the same two things.
 - **`sandbox`** — a real Open5GS core plus UERANSIM radio, with six scripted failure injections, each labeled with ground truth.
 - **`triage`** — an LLM agent (LATS tree search + CoALA memory) that turns a decoded failure into a grounded root-cause hypothesis, evaluated by a second, different model.
 
-```
-pcap ──► 5gcap decode ──► incident detection ──► search objective
-                        (code, fixed shapes)     (+ memory context)
-                                                   │
-  ┌────────────────────────────────────────────────┘
-  ▼
- LATS search — one per incident
-  expand    (LLM)   propose actions
-  execute   (code)  dispatch tools · ground finalize
-  evaluate  (LLM)   score trajectory
-  backprop  (code)  UCB1 · repeat, ≤10 rollouts
-  │
-  ▼
- grounded Episode ──► episodic memory
-  │
-  ▼
- stdout JSON ──► judge (a different LLM) ──► scores
-```
+![5G_PCAP architecture: decode, detect, LATS search, memory, and the judge](https://raw.githubusercontent.com/AdrianDonohoe/5G_PCAP/master/docs/diagrams/article-flow.png)
+
+*The whole pipeline, generated with [fireworks-tech-graph](https://github.com/yizhiyanhua-ai/fireworks-tech-graph). Full-size SVG and the diagram IR live in [`docs/diagrams/`](https://github.com/AdrianDonohoe/5G_PCAP/tree/master/docs/diagrams).*
 
 ## Ground truth first: decode without guessing
 
@@ -50,7 +35,7 @@ You can't evaluate a root-cause explainer without known failures, so I built a l
 | `pdu_session_reject_other` | APN not in UDM | 5GSM REJECT, cause #67 |
 | `pdu_session_timeout` | SMF SBI blackholed | hang ~11 s, then 5GMM #90, retries |
 
-Two shapes deliberately differ from the 3GPP textbook, because they are what Open5GS actually emits: a wrong Ki ends in REGISTRATION REJECT #111, not AUTHENTICATION REJECT #20, and the DNN failure comes back as #67, not #27. The fixtures record reality — the agent triages a real network, not the spec's ideal world. The timeout scenarios were the hard part. Pausing the SMF container doesn't hang anything (the NRF purges a heartbeat-less NF and the AMF answers instantly), so the scenario blackholes the SMF's SBI port from inside its own netns — heartbeats keep flowing, data-path requests time out.
+Two shapes deliberately differ from the 3GPP textbook, because they are what Open5GS actually emits: a wrong Ki ends in REGISTRATION REJECT #111, not AUTHENTICATION REJECT #20, and the DNN failure comes back as #67, not #27. The fixtures record reality — the agent triages a real network, not the spec's ideal world. The timeout scenarios were the hard part. Pausing the SMF container doesn't hang anything (the NRF purges a heartbeat-less NF and the AMF answers instantly), so the scenario blackholes the SMF's SBI port from inside the container's own Linux network namespace (netns) — heartbeats keep flowing, data-path requests time out.
 
 ## The agent: tree search over tools
 

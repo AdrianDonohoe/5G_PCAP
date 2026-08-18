@@ -12,9 +12,9 @@ I've spent a lot of those hours myself, and I kept noticing the same two things.
 - **`sandbox`** — a real Open5GS core plus UERANSIM radio, with six scripted failure injections, each labeled with ground truth.
 - **`triage`** — an LLM agent (LATS tree search + CoALA memory) that turns a decoded failure into a grounded root-cause hypothesis, evaluated by a second, different model.
 
-![5G_PCAP architecture: decode, detect, LATS search, memory, and the judge](docs/diagrams/article-flow.png)
+![5G_PCAP architecture: decode, detect, LATS search, memory, and the judge](https://raw.githubusercontent.com/AdrianDonohoe/5G_PCAP/master/docs/diagrams/article-flow.png)
 
-*The whole pipeline, generated with [fireworks-tech-graph](https://github.com/yizhiyanhua-ai/fireworks-tech-graph). Full-size SVG and the diagram IR live in [`docs/diagrams/`](docs/diagrams/).*
+*The whole pipeline, generated with [fireworks-tech-graph](https://github.com/yizhiyanhua-ai/fireworks-tech-graph). Full-size SVG and the diagram IR live in [`docs/diagrams/`](https://github.com/AdrianDonohoe/5G_PCAP/tree/master/docs/diagrams).*
 
 ## Ground truth first: decode without guessing
 

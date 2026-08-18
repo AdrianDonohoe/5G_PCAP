@@ -50,7 +50,7 @@ def _unrecognized(handle: str) -> str:
             f"expected {HANDLES}")
 
 
-def _fmt_ts(ts) -> str:
+def fmt_ts(ts) -> str:
     return f"{ts:.3f}" if isinstance(ts, (int, float)) else str(ts)
 
 
@@ -104,7 +104,7 @@ def _flow_detail(flow: dict) -> str:
              f"(RAN-UE-NGAP-ID {flow.get('ran_ue_ngap_id')}, "
              f"AMF-UE-NGAP-ID {flow.get('amf_ue_ngap_id')}, "
              f"{'partial' if flow.get('partial') else 'complete'}):"]
-    lines += [f"  [{i}] {_fmt_ts(m.get('ts'))}  {_msg_line(m)}"
+    lines += [f"  [{i}] {fmt_ts(m.get('ts'))}  {_msg_line(m)}"
               for i, m in enumerate(msgs, 1)]
     procs = flow.get("procedures") or []
     if procs:
@@ -115,7 +115,7 @@ def _flow_detail(flow: dict) -> str:
 
 def _n2_message_view(flow_id: int, i: int, msg: dict) -> str:
     lines = [f"Evidence flow:{flow_id}:{i}:",
-             f"  ts={_fmt_ts(msg.get('ts'))}",
+             f"  ts={fmt_ts(msg.get('ts'))}",
              f"  {msg.get('src_ip') or '?'} -> {msg.get('dst_ip') or '?'}"]
     ngap = f"ngap={msg.get('ngap') or '?'}"
     if msg.get("kind"):
@@ -137,14 +137,14 @@ def _n2_message_view(flow_id: int, i: int, msg: dict) -> str:
 def _unassociated_listing(capture: DecodedCapture) -> str:
     msgs = capture.n2.get("unassociated") or []
     lines = [f"Unassociated NGAP messages ({len(msgs)}):"]
-    lines += [f"  [{i}] {_fmt_ts(m.get('ts'))}  {m.get('ngap') or '?'}"
+    lines += [f"  [{i}] {fmt_ts(m.get('ts'))}  {m.get('ngap') or '?'}"
               for i, m in enumerate(msgs, 1)]
     return "\n".join(lines)
 
 
 def _unassociated_view(i: int, msg: dict) -> str:
     lines = [f"Evidence unassociated:{i}:",
-             f"  ts={_fmt_ts(msg.get('ts'))}",
+             f"  ts={fmt_ts(msg.get('ts'))}",
              f"  ngap={msg.get('ngap') or '?'}"]
     if msg.get("unparsed"):
         lines.append(f"  unparsed: {msg.get('unparsed')}")
@@ -155,7 +155,7 @@ def _n4_listing(capture: DecodedCapture) -> str:
     msgs = capture.n4.get("messages") or []
     lines = [f"N4 (PFCP) messages ({len(msgs)}):"]
     for i, msg in enumerate(msgs, 1):
-        line = (f"  [{i}] {_fmt_ts(msg.get('ts'))}  "
+        line = (f"  [{i}] {fmt_ts(msg.get('ts'))}  "
                 f"{msg.get('src_ip') or '?'}->{msg.get('dst_ip') or '?'}  "
                 f"{msg.get('name') or '?'}")
         if msg.get("seid") is not None:
@@ -170,7 +170,7 @@ def _n4_listing(capture: DecodedCapture) -> str:
 
 def _n4_view(i: int, msg: dict) -> str:
     lines = [f"Evidence n4:{i}:",
-             f"  ts={_fmt_ts(msg.get('ts'))}",
+             f"  ts={fmt_ts(msg.get('ts'))}",
              f"  {msg.get('src_ip') or '?'}:{msg.get('src_port')} -> "
              f"{msg.get('dst_ip') or '?'}:{msg.get('dst_port')}",
              f"  name={msg.get('name') or '?'}"]

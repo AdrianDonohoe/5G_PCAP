@@ -60,6 +60,14 @@ Hypothesis plus the Evidence it cited (not the full Trajectory). The unit
 stored in and retrieved from episodic memory.
 _Avoid_: incident record, memory entry
 
+**Post-incident report**:
+The deterministic Markdown artifact assembled from a saved triage run plus
+the decode: the Episode's narrative verbatim, cited evidence re-verified
+against the decode, spec-graph context, the flow timeline, capture KPIs,
+the search path, and the memory note. The only LLM prose in it is the
+Episode's narrative (ADR-0004).
+_Avoid_: writeup, summary, debrief
+
 **type_accuracy**:
 Eval-harness metric: exact match between a Hypothesis's `incident_type` and a
 sandbox scenario's ground-truth label. Heuristic, not judged.

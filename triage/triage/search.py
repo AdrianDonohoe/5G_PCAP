@@ -99,7 +99,7 @@ def _message_inventory(capture: DecodedCapture) -> dict:
     return inventory
 
 
-def _grounded(capture: DecodedCapture, episode: Episode) -> list:
+def grounded_evidence(capture: DecodedCapture, episode: Episode) -> list:
     """The cited evidence items that match a decoded message exactly."""
     inventory = _message_inventory(capture)
     grounded = []
@@ -125,7 +125,7 @@ def _finalize(capture: DecodedCapture, argument: str) -> tuple[str, Episode | No
                 f"{', '.join(INCIDENT_TYPES)}, \"narrative\": \"...\", "
                 f'"cited_evidence": [{{"message": ..., "cause": ..., '
                 f'"ts": ...}}]}}.', None)
-    grounded = _grounded(capture, episode)
+    grounded = grounded_evidence(capture, episode)
     if not grounded:
         return ("finalize rejected: no cited evidence matches a decoded "
                 "message. Cite message names and ts values exactly as shown "

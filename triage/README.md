@@ -23,7 +23,8 @@ invocation, decision by decision, is in
   explicitly, never inside pytest)
 - `scripts/build_corpus.py` — one-time 3GPP spec fetch/chunk (see Development)
 - `corpus/` — committed chunks.jsonl + manifest.json for the
-  query_3gpp_spec tool; `corpus/cache/` (zips) is gitignored
+  query_3gpp_spec tool; `corpus/cache/` (zips, embedding index, and the
+  spec graph from ADR-0003) is gitignored
 - `memory/` — episodic memory store (append-only episodes.jsonl, written by
   the consolidation step; runtime data, gitignored)
 

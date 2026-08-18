@@ -14,6 +14,11 @@ fastembed's one-time model download.
 
 Retrieval failures degrade to an honest observation string rather than a
 crash (ADR-0001: tools must never kill the search).
+
+Exact entity queries ("what does 5GMM cause #111 mean") additionally
+resolve against the spec graph (triage/specgraph.py, ADR-0003), a
+deterministic typed-entity graph extracted from the same corpus; an
+entity-context block is then prepended to the observation.
 """
 
 import hashlib
@@ -131,16 +136,47 @@ class SpecIndex:
 
 
 def query_3gpp_spec(query: str, top_k: int = TOP_K,
-                    index: SpecIndex | None = None) -> str:
-    """The Action's observation: the top_k spec chunks for a question."""
+                    index: SpecIndex | None = None, graph=None) -> str:
+    """The Action's observation: the top_k spec chunks for a question.
+
+    ADR-0003: when a query resolves to a spec-graph entity (a cause
+    number, message, procedure, or IE), an entity-context block is
+    prepended to the hit list. The graph defaults in only on the
+    production path (no index passed); calls that pass an index see
+    today's exact templates. Any graph failure degrades to plain hits.
+    """
+    ref = None
+    if graph is None and index is None:
+        # Lazy import/build, mirroring the embedding index: a broken or
+        # unbuildable graph must never touch the hit path below.
+        try:
+            from triage.specgraph import SpecGraph
+            graph = SpecGraph()
+        except Exception:
+            graph = None
+    if graph is not None:
+        try:
+            ref = graph.resolve(query)
+        except Exception:
+            ref = None
     try:
         hits = (index or SpecIndex()).search(query, top_k)
     except Exception as exc:  # offline / model missing: honest degradation
         return (f"3GPP spec index unavailable ({exc}); no spec chunks "
                 f"retrieved for: {query}")
+    entity = f"; entity: {ref.name}" if ref is not None else ""
     if not hits:
+        if ref is not None:
+            return "\n".join(
+                [f'3GPP spec retrieval for "{query}" (0 hit(s){entity}):']
+                + graph.entity_block(ref))
         return f'3GPP spec retrieval for "{query}": no matching chunks'
-    lines = [f'3GPP spec retrieval for "{query}" ({len(hits)} hit(s)):', ""]
+    lines = [f'3GPP spec retrieval for "{query}" '
+             f"({len(hits)} hit(s){entity}):"]
+    if ref is not None:
+        lines += graph.entity_block(ref)
+    else:
+        lines.append("")
     for i, (chunk, score) in enumerate(hits, 1):
         lines.append(f"[{i}] score={score:.3f}")
         lines.append(chunk["text"])

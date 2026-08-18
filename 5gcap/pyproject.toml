@@ -1,9 +1,10 @@
 [project]
 name = "5gcap"
 version = "0.1.0"
-description = "5G control-plane PCAP analyzer: decode NGAP/NAS and PFCP, map UE flows, compute KPIs"
+description = "5G control-plane PCAP analyzer: decode NGAP/NAS, PFCP, and SBI, map UE flows, compute KPIs"
 requires-python = ">=3.12"
 dependencies = [
+    "h2>=4.1",
     "pycrate>=0.8.1",
     "scapy>=2.6.1",
 ]

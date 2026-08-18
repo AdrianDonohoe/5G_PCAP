@@ -7,6 +7,9 @@ Pinned to the stable 19.x series (chosen over the 20.0.0 drafts — see
     TS 24.501 (NAS-5G)  j70 = V19.7.0
     TS 38.413 (NGAP)    j30 = V19.3.0
     TS 29.244 (PFCP)    j60 = V19.6.0
+    TS 29.500 (SBI)     j70 = V19.7.0
+    TS 29.503 (SBI-UDM) j70 = V19.7.0
+    TS 29.531 (SBI-NSSF) j70 = V19.7.0
 
 Downloads each spec's docx archive from 3GPP's own archive, converts the
 docx to text preserving the clause tree, and writes one chunk per clause
@@ -65,6 +68,9 @@ SPECS = {
     "24501": ("24_series/24.501", "j70", "TS 24.501"),
     "38413": ("38_series/38.413", "j30", "TS 38.413"),
     "29244": ("29_series/29.244", "j60", "TS 29.244"),
+    "29500": ("29_series/29.500", "j70", "TS 29.500"),
+    "29503": ("29_series/29.503", "j70", "TS 29.503"),
+    "29531": ("29_series/29.531", "j70", "TS 29.531"),
 }
 
 # 3GPP zip token letter -> release number; the digits are the version * 10.

@@ -1,6 +1,6 @@
 # 5G Control-Plane Capture Analysis
 
-The domain language for the `5gcap` tool: decoding NGAP/NAS (N2) and PFCP (N4) captures, mapping UE flows, and computing KPIs.
+The domain language for the `5gcap` tool: decoding NGAP/NAS (N2), PFCP (N4), and SBI (HTTP/2 on TCP 7777) captures, mapping UE flows, and computing KPIs.
 
 ## Language
 
@@ -9,11 +9,11 @@ One PCAP file recording a single interface over one time window.
 _Avoid_: trace, dump, recording
 
 **Flow**:
-All N2/N4 control-plane signaling belonging to one UE, associated across messages by NGAP UE IDs.
+All N2/N4 control-plane signaling belonging to one UE, associated across messages by NGAP UE IDs. SBI messages are not associated to a UE and live outside Flows.
 _Avoid_: session, connection, stream
 
 **Procedure**:
-A protocol-defined exchange within a Flow, with a start message and a terminal outcome (e.g. registration, PDU session establishment).
+A protocol-defined exchange within a Flow, with a start message and a terminal outcome (e.g. registration, PDU session establishment). On the SBI plane: one HTTP request and its response, or a request never answered.
 _Avoid_: transaction, dialog
 
 **KPI**:

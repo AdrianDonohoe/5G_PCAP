@@ -16,7 +16,7 @@ from triage.report import build_report, write_report
 from triage.specgraph import SpecGraph
 from triage.specrag import CHUNKS
 
-SPEC_TITLES = {"24501": "TS 24.501"}
+SPEC_TITLES = {"24501": "TS 24.501", "29531": "TS 29.531"}
 
 
 def write_corpus(path, chunks):
@@ -79,6 +79,20 @@ def tiny_chunks():
         chunk("24501", "5.4.1.3.7", "Abnormal cases in the UE", [
             "5\tNAS signalling procedures", "5.4\tSecurity procedures"],
             ABNORMAL_BODY),
+        # an SBI service clause: the heading names the service directly
+        # (the operation name is body-derived in the real corpus, so the
+        # resolve target here is the 5.2 heading entity)
+        chunk("29531", "5.2", "Nnssf_NSSelection Service", [
+            "5\tNnssf_NSSelection Service"],
+            "The Nnssf_NSSelection service provides network slice "
+            "selection information to its consumers.\n"),
+        chunk("29531", "5.2.2.2", "Nnssf_NSSelection_Get Operation", [
+            "5\tNnssf_NSSelection Service",
+            "5.2\tService Description",
+            "5.2.2\tService Operations"],
+            "The Nnssf_NSSelection_Get service operation shall provide "
+            "the requested slice selection information to the consumer "
+            "NF.\n"),
     ]
 
 
@@ -144,6 +158,59 @@ def saved_run(**overrides):
              "3GPP spec retrieval for \"5GMM cause #21\" (2 hit(s)):"],
             ["finalize {...}",
              "finalize accepted: hypothesis grounded in 2 evidence "
+             "item(s)."],
+        ],
+        "memory_wrote": True,
+    }
+    result.update(overrides)
+    return result
+
+
+def sbi_capture():
+    """A decoded SBI capture: one answered NSSF request (403)."""
+    return DecodedCapture(n2={}, sbi={
+        "kpis": {},
+        "messages": [{
+            "ts": 1.0, "src_ip": "10.0.0.3", "dst_ip": "10.0.0.4",
+            "src_port": 50001, "dst_port": 7777, "stream_id": 1,
+            "direction": "request", "method": "GET",
+            "path": "/nnssf-nsselection/v1/network-slice-information",
+            "status": None, "body_len": 0, "service": "Nnssf_NSSelection",
+            "name": "Nnssf_NSSelection", "problem_title": None,
+            "problem_cause": None, "unparsed": None},
+            {"ts": 1.234, "src_ip": "10.0.0.4", "dst_ip": "10.0.0.3",
+             "src_port": 7777, "dst_port": 50001, "stream_id": 1,
+             "direction": "response", "method": None, "path": None,
+             "status": 403, "body_len": 57, "service": "Nnssf_NSSelection",
+             "name": "Nnssf_NSSelection",
+             "problem_title": "Cannot find NSI",
+             "problem_cause": "SNSSAI_NOT_SUPPORTED", "unparsed": None}],
+        "procedures": [], "unpaired_requests": 0})
+
+
+def saved_sbi_run(**overrides):
+    result = {
+        "plane": "sbi",
+        "flow_id": None,
+        "procedure": "Nnssf_NSSelection",
+        "shape": "explicit reject",
+        "detail": "SBI status code(s) observed: 403",
+        "episode": {
+            "incident_type": "sbi_nssf_reject",
+            "narrative": "The NSSF answered the slice consult with 403: "
+                         "no NSI for S-NSSAI SST:1.",
+            "cited_evidence": [
+                {"message": "Nnssf_NSSelection", "cause": None,
+                 "ts": 1.234},
+            ],
+            "created_at": "2026-08-18T00:00:00Z",
+        },
+        "reward": 0.8,
+        "rollouts": 3,
+        "trajectory": [
+            ["inspect sbi:2", "Evidence sbi:2:"],
+            ["finalize {...}",
+             "finalize accepted: hypothesis grounded in 1 evidence "
              "item(s)."],
         ],
         "memory_wrote": True,
@@ -461,3 +528,93 @@ def test_write_report_matches_build(tmp_path):
     write_report([saved_run()], synthetic_capture(), out)
     assert out.read_text() == build_report([saved_run()],
                                            synthetic_capture())
+
+
+# --- SBI plane -------------------------------------------------------
+
+EXPECTED_SBI_SINGLE = """\
+# Post-incident report — sbi_nssf_reject
+
+**Flow:** SBI — Nnssf_NSSelection, explicit reject
+**Incident detail:** SBI status code(s) observed: 403
+**Hypothesis:** sbi_nssf_reject (reward 0.8, 3 rollouts)
+
+## Root cause
+The NSSF answered the slice consult with 403: no NSI for S-NSSAI SST:1.
+
+## Evidence
+- [verified] Nnssf_NSSelection @ 1.234s
+
+## Timeline (SBI)
+[1] 1.000s  GET /nnssf-nsselection/v1/network-slice-information -> 403  (Nnssf_NSSelection)
+[2] 1.234s  -> 403  (Nnssf_NSSelection)
+
+## Capture KPIs
+(no KPIs in this capture)
+
+## Search path
+[1] inspect sbi:2 -> Evidence sbi:2:
+[2] finalize {...} -> finalize accepted: hypothesis grounded in 1 evidence item(s).
+
+## Memory
+new Episode written (sbi_nssf_reject)
+"""
+
+
+def test_sbi_single_report_byte_exact():
+    report = build_report([saved_sbi_run()], sbi_capture())
+    assert report == EXPECTED_SBI_SINGLE
+
+
+def test_sbi_timeline_unanswered_request():
+    capture = DecodedCapture(n2={}, sbi={
+        "messages": [{
+            "ts": 2.0, "src_ip": "10.0.0.3", "dst_ip": "10.0.0.4",
+            "src_port": 50002, "dst_port": 7777, "stream_id": 1,
+            "direction": "request", "method": "POST",
+            "path": "/nudm-ueau/v1/ue-authentications",
+            "status": None, "body_len": 12,
+            "service": "Nudm_UEAuthentication",
+            "name": "Nudm_UEAuthentication", "problem_title": None,
+            "problem_cause": None, "unparsed": None}]})
+    result = saved_sbi_run(procedure="Nudm_UEAuthentication",
+                           shape="no terminal message (timeout)",
+                           detail=None)
+    report = build_report([result], capture)
+    assert "## Timeline (SBI)" in report
+    assert ("[1] 2.000s  POST /nudm-ueau/v1/ue-authentications "
+            "-> no response  (Nudm_UEAuthentication)") in report
+    assert "**Incident detail:**" not in report
+
+
+def test_sbi_evidence_unverified_without_sbi_loaded():
+    report = build_report([saved_sbi_run()], synthetic_capture())
+    assert "- [unverified] Nnssf_NSSelection @ 1.234s" in report
+    # the saved result still declares its plane: SBI timeline, no messages
+    assert "## Timeline (SBI)" in report
+    assert "(no SBI messages in this capture)" in report
+
+
+def test_sbi_spec_context_from_fixture_graph(graph):
+    report = build_report([saved_sbi_run()], sbi_capture(), graph=graph)
+    assert "## Spec context" in report
+    assert "entity Nnssf_NSSelection (message)" in report
+    assert report.index("## Spec context") < \
+        report.index("## Timeline (SBI)")
+
+
+def test_multi_incident_sbi_flow_label():
+    report = build_report([saved_run(), saved_sbi_run()], synthetic_capture())
+    assert "| 2 | SBI — Nnssf_NSSelection | sbi_nssf_reject | 0.8 | 3 |" \
+        in report
+    assert "## Incident 2 — sbi_nssf_reject — SBI — Nnssf_NSSelection" \
+        in report
+
+
+def test_sbi_no_hypothesis_label():
+    result = saved_sbi_run(episode=None, reward=0.0, rollouts=10,
+                           trajectory=[], memory_wrote=False)
+    report = build_report([result], sbi_capture())
+    assert report.startswith("# Post-incident report — no hypothesis "
+                             "(SBI — Nnssf_NSSelection)")
+    assert "**Flow:** SBI — Nnssf_NSSelection, explicit reject" in report

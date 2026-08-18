@@ -4,7 +4,7 @@ ADR-0003: the flat embedding index answers prose questions, but the
 agent's exact queries ("what does 5GMM cause #111 mean") deserve the
 entity answer: the cause row, the IE that defines it, the messages it
 co-occurs with. The graph is extracted from the committed corpus by
-deterministic rules -- per-spec-family profiles for the NAS/NGAP/PFCP
+deterministic rules -- per-spec-family profiles for the NAS/NGAP/PFCP/SBI
 clause dialects -- cached under corpus/cache/ keyed on the corpus
 sha256 (the same invalidation as the embedding index), and consulted
 only to enrich query_3gpp_spec's observation, never to replace it.
@@ -62,6 +62,13 @@ _NGAP_MSG_NAME = re.compile(
     r"\b(?:INITIATING MESSAGE|SUCCESSFUL OUTCOME|UNSUCCESSFUL OUTCOME)"
     r"\s+([A-Z][A-Za-z0-9]+)\b")
 _PAREN = re.compile(r"\s*\(.*")  # "(UE originating de-registration)" noise
+# SBI (TS 29.5xx) message names: service headings spell them directly
+# ("Nudm_UEAuthentication Service API"), operation headings embed them
+# ("Get service operation of Nnssf_NSSelection service"); body mentions
+# of the same pattern are validated against that heading vocabulary.
+_SBI_SPECS = ("29500", "29503", "29531")
+_SBI_NAME = re.compile(
+    r"\b(N[a-z]{2,}_[A-Z][A-Za-z0-9]*(?:_[A-Z][A-Za-z0-9]*)*)\b")
 
 _TYPE_RANK = {"message": 0, "procedure": 1, "ie": 2}
 
@@ -344,6 +351,52 @@ class SpecGraph:
                     clause=clause, id=f"message:{spec}:{clause}:{node['heading']}",
                     protocol="PFCP", pattern_derived=False,
                     display=node["heading"]))
+        # SBI: heading-derived service/operation names, plus body mentions
+        # validated against that vocabulary (the exact name or its service
+        # family up to the first "_" — "Nudm_SDM_Get" passes on the
+        # "Nudm_UEAuthentication Service" heading). Unseen families
+        # ("Npcf_…") never enter the vocabulary.
+        sbi_headings: set = set()   # (spec, clause, name) from headings
+        sbi_vocab: set = set()
+        for (spec, clause), node in nodes.items():
+            if spec not in _SBI_SPECS:
+                continue
+            for name in set(_SBI_NAME.findall(node["heading"])):
+                sbi_headings.add((spec, clause, name))
+                sbi_vocab.update((name, name.split("_", 1)[0]))
+        for spec, clause, name in sorted(sbi_headings):
+            entities.append(EntityRef(
+                type="message", spec=spec, name=name, clause=clause,
+                id=f"message:{spec}:{clause}:{name}", protocol="SBI",
+                pattern_derived=False, display=name))
+        seen_sbi = set(sbi_headings)
+        for chunk in chunks:
+            if chunk["spec"] not in _SBI_SPECS:
+                continue
+            for name in sorted(set(_SBI_NAME.findall(_body(chunk)))):
+                key = (chunk["spec"], chunk["clause"], name)
+                if key in seen_sbi:
+                    continue  # this clause's own heading already named it
+                seen_sbi.add(key)
+                if name in sbi_vocab or name.split("_", 1)[0] in sbi_vocab:
+                    entities.append(EntityRef(
+                        type="message", spec=chunk["spec"], name=name,
+                        clause=chunk["clause"],
+                        id=f"message:{chunk['spec']}:{chunk['clause']}:{name}",
+                        protocol="SBI", pattern_derived=True, display=name))
+        # ProblemDetails never matches the N-name pattern; 29.500 j70
+        # references it only (the type moved to TS 29.571), so a corpus
+        # whose clause tree does carry the heading gets the entity for free.
+        pd_clause = next((clause for (spec, clause), node in nodes.items()
+                          if spec == "29500"
+                          and node["heading"] == "ProblemDetails"), None)
+        if pd_clause is not None:
+            entities.append(EntityRef(
+                type="message", spec="29500", name="ProblemDetails",
+                clause=pd_clause,
+                id=f"message:29500:{pd_clause}:ProblemDetails",
+                protocol="SBI", pattern_derived=False,
+                display="ProblemDetails"))
 
         # defined_in: cause -> the IE entity of its own table clause.
         ie_by_key = {(e.spec, e.clause): e for e in entities
@@ -357,7 +410,11 @@ class SpecGraph:
         # alone would otherwise link every cause to every cause). NGAP
         # causes are excluded (value-less names like "Unspecified" would
         # match arbitrary prose), as are one-word displays ("Reserved.").
-        messages = [e for e in entities if e.type == "message"]
+        # SBI messages are excluded: their dialect has no cause/procedure
+        # peers, so they never form co_mentioned edges (and the corpus-wide
+        # display scan would pay for thousands of dead entities).
+        messages = [e for e in entities
+                    if e.type == "message" and e.protocol != "SBI"]
         causes = [e for e in entities
                   if e.type == "cause" and e.protocol != "NGAP"
                   and len(e.display.split()) >= 2]

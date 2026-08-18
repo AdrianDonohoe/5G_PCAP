@@ -1,14 +1,15 @@
 # triage evals
 
 The offline eval harness for `type_accuracy` and `diagnosis_quality`
-(CONTEXT.md), over the six labeled failure-injection fixtures in
-`5gcap/tests/fixtures/`. Runs explicitly — never inside the default pytest
+(CONTEXT.md), over the eight labeled failure-injection fixtures in
+`5gcap/tests/fixtures/` — the two `sbi_*` fixtures join the run only once
+their sandbox pcaps exist. Runs explicitly — never inside the default pytest
 suite, because every fixture run costs real Groq calls (ADR-0002).
 
 ## Run
 
 ```
-uv run python evals/run_eval.py                 # all 6 fixtures x 3 runs
+uv run python evals/run_eval.py                 # all enabled fixtures x 3 runs
 uv run python evals/run_eval.py --fixtures auth_failure --runs 1   # smoke
 uv run python evals/run_eval.py --resume        # skip runs already in --out
 ```
@@ -21,8 +22,9 @@ synced.
 
 ## Targets
 
-- `type_accuracy` >= 5/6 — fixture-level mean of exact `incident_type`
-  matches against the fixture's `.label.json`.
+- `type_accuracy` >= (n-1)/n over the enabled fixtures — 7/8 once all eight
+  are enabled — fixture-level mean of exact `incident_type` matches against
+  the fixture's `.label.json`.
 - `diagnosis_quality` >= 0.7 — run-level mean of four 0–1 dimension scores
   (Accuracy, Specificity, Evidence, Causality) from an LLM judge; a run
   whose search completes no Hypothesis scores 0.0.
@@ -44,6 +46,12 @@ synced.
   when the decode cannot distinguish them.
 - **Episodic memory reset**: each fixture run uses a fresh temp
   `episodes.jsonl`, so consolidation never dedups across runs.
+- **Plane filter**: each fixture searches only its own plane's incidents —
+  the six N2 fixtures search N2 incidents only, the two `sbi_*` fixtures
+  (which decode `<name>.pcap` and `<name>_sbi.pcap`) search SBI incidents
+  only. Without it, `pdu_session_timeout`'s SBI view — which legitimately
+  shows an unanswered Nsmf_PDUSession request — would be searched against an
+  N2 label.
 - **The `spec` Action** may trigger the embedding-index build on the first
   eval run (~15–30 min CPU on this VM); afterwards it loads from
   `triage/corpus/cache/`.

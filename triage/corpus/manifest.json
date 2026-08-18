@@ -1,5 +1,5 @@
 {
-  "built": "2026-08-17T13:20:09.579409+00:00",
+  "built": "2026-08-18T14:47:03.184424+00:00",
   "specs": {
     "24501": {
       "title": "TS 24.501",
@@ -36,6 +36,42 @@
       ],
       "chunks": 832,
       "chars": 2187794
+    },
+    "29500": {
+      "title": "TS 29.500",
+      "token": "j70",
+      "version": "19.7.0",
+      "zip": "29500-j70.zip",
+      "zip_sha256": "f8df8c4492c8474c97970f2a22ac6533de18292bd413c525facbe27534bef2a0",
+      "docx": [
+        "29500-j70.docx"
+      ],
+      "chunks": 232,
+      "chars": 515763
+    },
+    "29503": {
+      "title": "TS 29.503",
+      "token": "j70",
+      "version": "19.7.0",
+      "zip": "29503-j70.zip",
+      "zip_sha256": "4cc27eee49fb763be9c604a3d6dd105aedcc2e9aa61978a23f576b696570a6b3",
+      "docx": [
+        "29503-j70.docx"
+      ],
+      "chunks": 1044,
+      "chars": 1893968
+    },
+    "29531": {
+      "title": "TS 29.531",
+      "token": "j70",
+      "version": "19.7.0",
+      "zip": "29531-j70.zip",
+      "zip_sha256": "6a483b5a2d2393a610b562ebb7ac19d992a641953c2e50c19f66b437ff2447ca",
+      "docx": [
+        "29531-j70.docx"
+      ],
+      "chunks": 124,
+      "chars": 228455
     }
   }
 }

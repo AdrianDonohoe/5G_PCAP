@@ -50,6 +50,18 @@ def test_rejects_invalid_episodes(tmp_path):
     assert store.load() == []
 
 
+def test_accepts_sbi_incident_types(tmp_path):
+    store = make_store(tmp_path)
+    store.add({**EP, "incident_type": "sbi_udm_timeout",
+               "cited_evidence": [{"message": "Nudm_UEAuthentication",
+                                   "cause": None, "ts": 1.0}]})
+    store.add({**EP, "incident_type": "sbi_nssf_reject",
+               "cited_evidence": [{"message": "Nnssf_NSSelection",
+                                   "cause": None, "ts": 1.0}]})
+    assert [ep.incident_type for ep in store.load()] == \
+        ["sbi_udm_timeout", "sbi_nssf_reject"]
+
+
 def test_appends_across_instances(tmp_path):
     path = tmp_path / "episodes.jsonl"
     MemoryStore(path).add(EP)

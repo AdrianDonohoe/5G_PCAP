@@ -1,20 +1,23 @@
 #!/bin/bash
 # Generates fresh fixture captures for 5gcap from the Open5GS + UERANSIM
 # sandbox: brings up an ephemeral UERANSIM RAN against the (already-running,
-# persistent) Open5GS core, captures N2 (NGAP/SCTP) and N4 (PFCP) on the
-# shared core bridge, waits for all UEs to complete Registration + PDU
-# session establishment, then tears the RAN back down.
+# persistent) Open5GS core, captures N2 (NGAP/SCTP), N4 (PFCP), and SBI
+# (HTTP/2, tcp/7777) on the shared core bridge, waits for all UEs to
+# complete Registration + PDU session establishment, then tears the RAN
+# back down.
 #
 # Without --scenario (golden path) this writes the fixed-named
-# sandbox_n2.pcap / sandbox_n4.pcap used by 5gcap's test suite.
+# sandbox_n2.pcap / sandbox_n4.pcap / sandbox_sbi.pcap used by 5gcap's
+# test suite.
 #
 # With --scenario <name>, a failure-injection scenario is applied to UE1
 # only (UE2/UE3 stay untouched as golden flows in the same capture) and the
-# output is <name>.pcap plus a sibling <name>.label.json = {incident_type,
-# scenario}, supplying ground truth for the triage eval harness. A scenario
-# is a UE1-config override plus optional UDM seed variant (pre-hook) and
-# optional docker pause (timeout shapes), and maps one-to-one onto the six
-# incident_types in ../triage/CONTEXT.md:
+# output is <name>.pcap plus <name>_sbi.pcap (every scenario captures SBI)
+# and a sibling <name>.label.json = {incident_type, scenario}, supplying
+# ground truth for the triage eval harness. A scenario is a UE1-config
+# override plus optional UDM seed variant (pre-hook) and optional docker
+# pause (timeout shapes), or a core-side injection (the sbi_* pair), and
+# maps one-to-one onto the eight incident_types in ../triage/CONTEXT.md:
 #
 #   auth_failure              wrong Ki on UE1      -> SYNCH FAILURE #21, then
 #                                                    REGISTRATION REJECT #111
@@ -27,6 +30,11 @@
 #                             (DNN seeded in UDM only, absent from SMF)
 #   pdu_session_timeout       blackhole SMF SBI    -> sm-context creates hang
 #                                                    ~11s then 5GMM #90
+#   sbi_udm_timeout           pause sandbox_udm    -> Nudm_* requests left
+#                                                    unanswered (SBI timeout)
+#   sbi_nssf_reject           SMF profile dropped  -> Nnssf_NSSelection 403,
+#                             + SMF paused + no    then 5GMM STATUS #403
+#                             NSI in nssf.yaml
 #
 # See ../docs/adr/0002-open5gs-ueransim-sandbox.md and
 # ../triage/docs/adr/0002-triage-v1-implementation-choices.md.
@@ -48,11 +56,11 @@ SCENARIO=""
 if [[ $# -eq 2 && "$1" == "--scenario" ]]; then
   SCENARIO="$2"
 elif [[ $# -gt 0 ]]; then
-  echo "Usage: $0 [--scenario auth_failure|registration_reject|registration_timeout|pdu_session_reject_slice|pdu_session_reject_other|pdu_session_timeout]" >&2
+  echo "Usage: $0 [--scenario auth_failure|registration_reject|registration_timeout|pdu_session_reject_slice|pdu_session_reject_other|pdu_session_timeout|sbi_udm_timeout|sbi_nssf_reject]" >&2
   exit 2
 fi
 case "$SCENARIO" in
-  ""|auth_failure|registration_reject|registration_timeout|pdu_session_reject_slice|pdu_session_reject_other|pdu_session_timeout) ;;
+  ""|auth_failure|registration_reject|registration_timeout|pdu_session_reject_slice|pdu_session_reject_other|pdu_session_timeout|sbi_udm_timeout|sbi_nssf_reject) ;;
   *)
     echo "Error: unknown scenario '$SCENARIO'" >&2
     exit 2 ;;
@@ -60,26 +68,40 @@ esac
 
 UE1_YAML="$RAN_DIR/ueransim/ueransim-ue1.yaml"
 UE1_YAML_BAK="$RAN_DIR/ueransim/ueransim-ue1.yaml.scenario-bak"
+NSSF_YAML="$CORE_DIR/nssf/nssf.yaml"
+NSSF_YAML_BAK="$CORE_DIR/nssf/nssf.yaml.scenario-bak"
 DB_URI="mongodb://$(grep ^MONGO_IP= "$CORE_DIR/.env" | cut -d= -f2)/open5gs"
 PAUSED=""
 UDM_SEEDED=""
 SMF_BLACKHOLED=""
+SMF_PAUSED=""
+NSSF_MODIFIED=""
 
 cleanup() {
   set +e
   [[ -n "${N2_PID:-}" ]] && kill "$N2_PID" 2>/dev/null
   [[ -n "${N4_PID:-}" ]] && kill "$N4_PID" 2>/dev/null
-  wait "${N2_PID:-}" "${N4_PID:-}" 2>/dev/null
+  [[ -n "${SBI_PID:-}" ]] && kill "$SBI_PID" 2>/dev/null
+  wait "${N2_PID:-}" "${N4_PID:-}" "${SBI_PID:-}" 2>/dev/null
   [[ -n "$PAUSED" ]] && docker unpause "$PAUSED" 2>/dev/null
   if [[ -n "$SMF_BLACKHOLED" ]]; then
     docker exec sandbox_smf iptables -D INPUT -p tcp --dport 7777 -j DROP \
       2>/dev/null
+  fi
+  if [[ -n "$SMF_PAUSED" ]]; then
+    # The SMF was paused while its NF profile was dropped from the NRF:
+    # a restart re-registers the profile, restoring the golden state.
+    docker restart sandbox_smf 2>/dev/null
   fi
   if [[ -n "$UDM_SEEDED" ]]; then
     # Remove the otherdnn seed variant so the golden state is restored.
     (cd "$CORE_DIR" && docker compose exec -T nrf mongosh "$DB_URI" --quiet \
       --eval 'db.subscribers.updateOne({imsi:"'"$UE1_IMSI"'"},{$pull:{"slice.0.session":{name:"otherdnn"}}})' \
       >/dev/null 2>&1)
+  fi
+  if [[ -n "$NSSF_MODIFIED" ]]; then
+    [[ -f "$NSSF_YAML_BAK" ]] && mv -f "$NSSF_YAML_BAK" "$NSSF_YAML"
+    docker restart sandbox_nssf 2>/dev/null
   fi
   [[ -f "$UE1_YAML_BAK" ]] && mv -f "$UE1_YAML_BAK" "$UE1_YAML"
   (cd "$RAN_DIR" && docker compose down)
@@ -130,6 +152,24 @@ restart_amf_fresh() {
     sleep 1
   done
   [[ "$smf_known" = 1 ]] || { echo "Error: AMF did not associate the SMF" >&2; exit 1; }
+}
+
+restart_nssf_fresh() {
+  # Restart the NSSF so it picks up the modified nssf.yaml, and wait for
+  # the NEW process (same line-count marker trick as restart_amf_fresh).
+  local mark nssf_ready
+  mark=$(docker compose --project-directory "$CORE_DIR" logs --no-color nssf \
+    2>/dev/null | wc -l)
+  docker restart sandbox_nssf
+  nssf_ready=0
+  for _ in $(seq 1 60); do
+    if docker compose --project-directory "$CORE_DIR" logs --no-color nssf \
+        2>/dev/null | tail -n +$((mark + 1)) \
+        | grep "NSSF initialize...done" >/dev/null
+    then nssf_ready=1; break; fi
+    sleep 1
+  done
+  [[ "$nssf_ready" = 1 ]] || { echo "Error: NSSF did not become ready" >&2; exit 1; }
 }
 
 apply_scenario() {
@@ -193,9 +233,11 @@ PY
 
 if [[ -n "$SCENARIO" ]]; then
   N2_OUT="$FIXTURES_DIR/$SCENARIO.pcap"
+  SBI_OUT="$FIXTURES_DIR/${SCENARIO}_sbi.pcap"
 else
   N2_OUT="$FIXTURES_DIR/sandbox_n2.pcap"
   N4_OUT="$FIXTURES_DIR/sandbox_n4.pcap"
+  SBI_OUT="$FIXTURES_DIR/sandbox_sbi.pcap"
 fi
 
 NET_ID=$(docker network inspect "$NETWORK_NAME" --format '{{.Id}}')
@@ -208,6 +250,11 @@ if [[ -n "${N4_OUT:-}" ]]; then
   tcpdump -i "$BRIDGE" -w "$N4_OUT" 'udp port 8805' &
   N4_PID=$!
 fi
+# SBI is captured on every run: scenario labels live on the N2 plane today,
+# but the 7777 traffic is the ground-truth evidence the sbi_* fixtures are
+# judged against (and a visibility bonus on the six N2 scenarios).
+tcpdump -i "$BRIDGE" -w "$SBI_OUT" 'tcp port 7777' &
+SBI_PID=$!
 sleep 3  # let tcpdump attach to the bridge before any RAN traffic starts
 
 # Fresh AMF state so the first registration does not stall on stale UE
@@ -249,6 +296,44 @@ elif [[ "$SCENARIO" == "pdu_session_timeout" ]]; then
   (cd "$RAN_DIR" && docker compose up -d --force-recreate gnb ue1)
   sleep "$TIMEOUT_SCENARIO_SECS"
   echo "Capture window done (PDU session timeout is the expected outcome)."
+elif [[ "$SCENARIO" == "sbi_udm_timeout" ]]; then
+  # Registration reaches the UDM through the AUSF (Nudm_UEAuthentication);
+  # freezing the UDM leaves every Nudm_* request unanswered, and the UE
+  # re-attempts registration on its own timers -- the SBI plane's "left
+  # open" signature. (The gNB comes up first so the capture holds its SCTP
+  # association carrying the registration traffic.)
+  echo "Starting gNB..."
+  (cd "$RAN_DIR" && docker compose up -d --force-recreate gnb)
+  sleep 8
+  echo "Pausing sandbox_udm (registration will never complete)..."
+  docker pause sandbox_udm
+  PAUSED=sandbox_udm
+  (cd "$RAN_DIR" && docker compose up -d --force-recreate ue1)
+  sleep "$TIMEOUT_SCENARIO_SECS"
+  echo "Capture window done (SBI timeout is the expected outcome)."
+elif [[ "$SCENARIO" == "sbi_nssf_reject" ]]; then
+  # The compound injection (source-verified against Open5GS v2.8.0): the
+  # AMF only consults the NSSF when NRF SMF discovery comes back empty.
+  # Deleting the SMF's NF profile empties discovery; pausing the SMF keeps
+  # it from heartbeat-re-registering; and with the nsi: block removed from
+  # nssf.yaml the NSSF can answer NSSelection only with 403 "Cannot find
+  # NSI by S-NSSAI[SST:1 SD:0x0]". The AMF turns that into 5GMM STATUS
+  # #403 to the UE. Registration itself never touches the SMF or NSSF, so
+  # it completes normally before the PDU session request fails.
+  echo "Dropping the SMF NF profile and pausing the SMF..."
+  (cd "$CORE_DIR" && docker compose exec -T nrf mongosh "$DB_URI" --quiet \
+    --eval 'db.nf_profiles.deleteMany({nfType:"SMF"})' >/dev/null)
+  docker pause sandbox_smf
+  PAUSED=sandbox_smf
+  SMF_PAUSED=1
+  echo "Removing the nsi: block from nssf.yaml and restarting the NSSF..."
+  cp "$NSSF_YAML" "$NSSF_YAML_BAK"
+  sed -i '/^        nsi:/,$d' "$NSSF_YAML"
+  NSSF_MODIFIED=1
+  restart_nssf_fresh
+  (cd "$RAN_DIR" && docker compose up -d --force-recreate gnb ue1)
+  sleep "$TIMEOUT_SCENARIO_SECS"
+  echo "Capture window done (NSSF 403 -> 5GMM STATUS #403 is the expected outcome)."
 else
   echo "Starting ephemeral RAN (gNB + ${#UE_SERVICES[@]} UEs)..."
   (cd "$RAN_DIR" && docker compose up -d --force-recreate)
@@ -288,9 +373,11 @@ fi
 # kill/wait fails under `set -e` before the label block can run).
 kill "$N2_PID" 2>/dev/null || true
 [[ -n "${N4_PID:-}" ]] && kill "$N4_PID" 2>/dev/null || true
+[[ -n "${SBI_PID:-}" ]] && kill "$SBI_PID" 2>/dev/null || true
 wait "$N2_PID" 2>/dev/null || true
 [[ -n "${N4_PID:-}" ]] && wait "$N4_PID" 2>/dev/null || true
-unset N2_PID N4_PID
+[[ -n "${SBI_PID:-}" ]] && wait "$SBI_PID" 2>/dev/null || true
+unset N2_PID N4_PID SBI_PID
 
 if [[ -n "$SCENARIO" ]]; then
   printf '{"incident_type": "%s", "scenario": "%s"}\n' "$SCENARIO" "$SCENARIO" \
@@ -300,4 +387,5 @@ fi
 echo "Wrote:"
 echo "  $N2_OUT"
 [[ -n "${N4_OUT:-}" ]] && echo "  $N4_OUT"
+echo "  $SBI_OUT"
 [[ -n "$SCENARIO" ]] && echo "  $FIXTURES_DIR/$SCENARIO.label.json"

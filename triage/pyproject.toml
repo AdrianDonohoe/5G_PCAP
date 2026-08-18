@@ -21,6 +21,9 @@ packages = ["triage"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# so tests can import evals.run_eval (a script, not part of the triage
+# wheel) — importing it never costs Groq calls, see test_eval.py
+pythonpath = ["."]
 
 [dependency-groups]
 dev = [

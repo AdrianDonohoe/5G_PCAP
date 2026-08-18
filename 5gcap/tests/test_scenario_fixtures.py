@@ -9,9 +9,12 @@ against the sibling <name>.label.json ground-truth labels.
 import json
 from pathlib import Path
 
+import pytest
+
 from fivegcap.capture import read_capture
 from fivegcap.flow import build_flows
 from fivegcap.ngap import decode as ngap_decode
+from fivegcap.sbi import read_sbi_capture, pair_procedures
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -22,6 +25,14 @@ SCENARIOS = [
     "pdu_session_reject_slice",
     "pdu_session_reject_other",
     "pdu_session_timeout",
+]
+
+# SBI-plane scenarios: their pcaps arrive with the sandbox run
+# (sandbox/capture.sh), so these tests stay skipped until then. Wire shapes
+# below are the source-verified expectations; tighten after the live run.
+SBI_SCENARIOS = [
+    "sbi_udm_timeout",
+    "sbi_nssf_reject",
 ]
 
 
@@ -147,3 +158,55 @@ def test_pdu_session_timeout():
     first_bounce = min(m.ts for m, nas in f.messages if nas and nas.cause == 90)
     assert first_bounce - first_request > 5.0, \
         "the #90 must arrive after the SBI deadline, not instantly"
+
+
+def _sbi_procedures(scenario):
+    raw = read_sbi_capture(str(FIXTURES / f"{scenario}_sbi.pcap"))
+    return pair_procedures(raw)
+
+
+@pytest.mark.skipif(
+    not (FIXTURES / "sbi_udm_timeout_sbi.pcap").exists(),
+    reason="SBI pcaps arrive with the sandbox run (sandbox/capture.sh)")
+def test_sbi_udm_timeout():
+    label = json.loads((FIXTURES / "sbi_udm_timeout.label.json").read_text())
+    assert label == {"incident_type": "sbi_udm_timeout",
+                     "scenario": "sbi_udm_timeout"}
+    # The paused UDM freezes AUSF's Nudm_UEAuthentication first; ANY
+    # unanswered SBI request is the incident, so assert on timeouts rather
+    # than a specific service name.
+    procedures, unpaired = _sbi_procedures("sbi_udm_timeout")
+    timeouts = [p for p in procedures if p.outcome == "timeout"]
+    assert timeouts, "the paused UDM must leave SBI requests unanswered"
+    assert unpaired >= 1
+    # N2: the AMF can't obtain auth vectors, so registration never completes.
+    flows = _flows("sbi_udm_timeout")
+    assert flows, "registration attempts must reach the AMF"
+    assert all(not f.procedures for f in flows), \
+        "no terminal outcome: the hung UDM keeps the AMF silent"
+
+
+@pytest.mark.skipif(
+    not (FIXTURES / "sbi_nssf_reject_sbi.pcap").exists(),
+    reason="SBI pcaps arrive with the sandbox run (sandbox/capture.sh)")
+def test_sbi_nssf_reject():
+    label = json.loads((FIXTURES / "sbi_nssf_reject.label.json").read_text())
+    assert label == {"incident_type": "sbi_nssf_reject",
+                     "scenario": "sbi_nssf_reject"}
+    # SBI: the NSSF answers the NSSelection consult with 403 (source-verified
+    # Open5GS v2.8.0: "Cannot find NSI by S-NSSAI[SST:1 SD:0x0]"; the exact
+    # ProblemDetails title gets pinned after the live run).
+    procedures, _ = _sbi_procedures("sbi_nssf_reject")
+    rejects = [p for p in procedures
+               if p.kind == "Nnssf_NSSelection" and p.outcome == "reject"]
+    assert rejects, "the NSSF must reject the NSSelection consult"
+    assert rejects[0].status == 403
+    # N2: registration completes (no SMF involved); the PDU session consult
+    # is bounced back as 5GMM STATUS #403.
+    flows = _flows("sbi_nssf_reject")
+    assert len(flows) == 1  # gnb+ue1 only
+    f = flows[0]
+    reg = [p for p in f.procedures if p.kind == "registration"]
+    assert reg and reg[0].outcome == "accept"
+    assert 403 in _causes(f), "the AMF must bounce the PDU request with #403"
+    assert any(nas.inner == "5GMMStatus" for _, nas in f.messages if nas)

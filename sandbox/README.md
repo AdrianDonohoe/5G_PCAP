@@ -10,7 +10,7 @@ core interactively. Design rationale: [`../docs/adr/0002-open5gs-ueransim-sandbo
   + Mongo, long-lived, persistent volume. Its own Docker Compose project.
 - `ran/` — UERANSIM gNB + 3 UEs, ephemeral, recreated on every capture.
   Joins `core`'s network (`sandbox_core`) as an external network.
-- `capture.sh` — brings the RAN up, captures N2/N4, waits for all UEs to
+- `capture.sh` — brings the RAN up, captures N2/N4/SBI, waits for all UEs to
   finish, tears the RAN back down, writes fixtures.
 
 Per-NF config/init scripts and the UERANSIM Dockerfile are vendored (and
@@ -40,16 +40,18 @@ cd ../
 ./capture.sh                         # brings up RAN, captures, tears RAN down
 ```
 
-Output: `../5gcap/tests/fixtures/sandbox_n2.pcap` (NGAP/SCTP) and
-`sandbox_n4.pcap` (PFCP) — fixed filenames, overwritten each run. Review with
+Output: `../5gcap/tests/fixtures/sandbox_n2.pcap` (NGAP/SCTP),
+`sandbox_n4.pcap` (PFCP), and `sandbox_sbi.pcap` (HTTP/2 SBI on TCP 7777) —
+fixed filenames, overwritten each run. Review with
 `git diff`/`git status` before committing; re-run `capture.sh` if a run comes
 back with a `[PARTIAL]` flow (rare capture-start race).
 
 ### Failure-injection scenarios
 
 `./capture.sh --scenario <name>` applies a failure to UE1 only (UE2/UE3 stay
-golden in the same capture) and writes `<name>.pcap` plus a sibling
-`<name>.label.json` ground-truth label for the triage eval harness:
+golden in the same capture) and writes `<name>.pcap` and `<name>_sbi.pcap`
+plus a sibling `<name>.label.json` ground-truth label for the triage eval
+harness:
 
 | scenario | injection | expected wire shape |
 |---|---|---|
@@ -59,6 +61,8 @@ golden in the same capture) and writes `<name>.pcap` plus a sibling
 | `pdu_session_reject_slice` | UE1 second session on SST 2 | SST 1 session accepts; 5GMM STATUS #91 on SST 2 |
 | `pdu_session_reject_other` | UE1 APN `otherdnn` (UDM-only DNN) | 5GSM REJECT, cause #67 |
 | `pdu_session_timeout` | blackhole SMF SBI port (in-netns iptables) | sm-context create hangs ~11 s, then 5GMM #90, UE retries |
+| `sbi_udm_timeout` | `docker pause sandbox_udm` | ≥1 unanswered Nudm_* request (AUSF→UDM auth hangs first); N2 registration never completes |
+| `sbi_nssf_reject` | SMF profile deleted from NRF + SMF paused + `nsi:` stripped from NSSF config | Nnssf_NSSelection 403, then 5GMM STATUS #403 to the UE |
 
 Two shapes differ from the 3GPP textbook on purpose, because they are what
 Open5GS actually emits (verified in the generated fixtures): `auth_failure`
@@ -69,12 +73,17 @@ deadline (`time.message.duration` + 1 s — no amf.yaml key overrides it for
 the AMF); pausing the SMF container does not produce a hang at all (the NRF
 purges a heartbeat-less NF within ~10 s and the AMF answers instantly), which
 is why the scenario blackholes the SMF's SBI port from inside its own netns
-instead — heartbeats keep flowing, data-path requests time out.
+instead — heartbeats keep flowing, data-path requests time out. The
+`sbi_nssf_reject` injection is compound for the same reason: deleting the SMF
+NF profile alone fails (its heartbeats re-register it), so the SMF is paused
+too, and the NSSF's `nsi:` block is stripped — with no SMF discoverable and no
+NSI mapping S-NSSAI 1, the NSSF answers Nnssf_NSSelection 403 and the AMF
+relays it as 5GMM STATUS #403.
 
 Timeout scenarios start only `gnb`+`ue1`, capture a fixed ~45 s window, and
 exit 0 — the missing terminal message *is* the expected outcome. All scenario
-mutations (UE1 config, UDM seed variant, container pause, SMF blackhole rule)
-are reverted on exit.
+mutations (UE1 config, UDM seed variant, container pauses, SMF blackhole
+rule, NRF profile delete, NSSF config edit) are reverted on exit.
 
 For interactive poking: `docker compose logs -f <service>` in `core/`, or
 `docker compose exec <service> bash`.

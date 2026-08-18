@@ -1,6 +1,6 @@
 # 5gcap
 
-5G control-plane PCAP analyzer: decodes NGAP/NAS (N2) and PFCP (N4) captures, maps per-UE flows, and computes KPIs.
+5G control-plane PCAP analyzer: decodes NGAP/NAS (N2), PFCP (N4), and SBI (HTTP/2 on TCP 7777) captures, maps per-UE flows, and computes KPIs.
 
 Domain language (Capture, Flow, Procedure, KPI, Partial Flow) is defined in [`../CONTEXT.md`](../CONTEXT.md). The packet-parsing stack decision is recorded in [`../docs/adr/0001-scapy-for-packet-parsing.md`](../docs/adr/0001-scapy-for-packet-parsing.md).
 
@@ -10,17 +10,18 @@ Domain language (Capture, Flow, Procedure, KPI, Partial Flow) is defined in [`..
 5gcap analyze <file.pcap> [--json out.json]
 ```
 
-Single pass: decodes procedures, prints a terminal trace, computes KPIs, optionally writes structured JSON. A PFCP-only (N4) capture is detected automatically and prints a message/procedure trace instead — KPIs (attach time, PDU session establishment time) are defined over the NGAP carrier only (see `../CONTEXT.md`), not N4.
+Single pass: decodes procedures, prints a terminal trace, computes KPIs, optionally writes structured JSON. A PFCP-only (N4) or SBI-only capture is detected automatically and prints a message/procedure trace instead — KPIs (attach time, PDU session establishment time) are defined over the NGAP carrier only (see `../CONTEXT.md`), not N4 or SBI.
 
 ## Stack
 
 - **pycrate** — ASN.1/CSN.1 decoding of NGAP, NAS-5G, PFCP (see ADR-0001)
 - **scapy** — PCAP I/O and SCTP transport reassembly
+- **h2** (hyper) — HTTP/2 framing + HPACK for the SBI plane (h2c on TCP 7777); scapy stays for packet I/O
 - NAS security-protected payloads cannot be decrypted (`CryptoMobile` absent) — surfaced as `unparsed`
 
 ## v1 scope and limits
 
-- Control plane only: NGAP/NAS over N2, PFCP over N4. GTP-U user plane and SBI are out of scope.
+- Control plane only: NGAP/NAS over N2, PFCP over N4, SBI (HTTP/2) on TCP 7777. GTP-U user plane is out of scope.
 - First procedures: Registration and PDU session establishment.
 - **One interface per capture.** Mixed multi-interface files get a warning and lenient best-effort decode.
 - **Capture size budget: ~100 MB** (pure-Python parsing).

@@ -1,7 +1,8 @@
 # triage
 
 LLM-agent root-cause hypothesis generation for failed 5G Registration and PDU
-Session Activation Procedures, built on top of 5gcap's decode output. Invoked
+Session Activation Procedures and SBI service transactions, built on top of
+5gcap's decode output (N2, N4, SBI planes). Invoked
 one-shot: the CLI consumes a single decoded Capture and the agent runs once
 per failed Incident within it; not a live/streaming monitor.
 Architecture rationale: [`docs/adr/0001-lats-coala-triage-agent.md`](./docs/adr/0001-lats-coala-triage-agent.md).
@@ -10,14 +11,19 @@ Architecture rationale: [`docs/adr/0001-lats-coala-triage-agent.md`](./docs/adr/
 
 **Incident**:
 A single failed Procedure (Registration or PDU Session Activation) within one
-Flow — either an explicit Reject with a cause code, or a Partial Flow whose
-terminal message never arrives. The unit of work the agent is invoked on.
+N2 Flow, or a failed SBI service transaction (one HTTP request/response
+pair) — either an explicit Reject with a cause code (or an HTTP status >=
+400), or a terminal message that never arrives (an unanswered SBI request).
+The unit of work the agent is invoked on. SBI Incidents carry no flow_id:
+SBI messages are not correlated to N2 flows.
 _Avoid_: alert, event, case
 
 **Evidence**:
-A concrete fact drawn from 5gcap's decode output — a specific message, IE, or
-Cause value — that a Hypothesis cites to support its claim. A Hypothesis with
-no Evidence is not a valid Hypothesis.
+A concrete fact drawn from 5gcap's decode output — a specific message, IE,
+Cause value, or (on the SBI plane) service transaction — that a Hypothesis
+cites to support its claim. A Hypothesis with no Evidence is not a valid
+Hypothesis. SBI Evidence cites the service name with `cause = None`; the
+HTTP status lives in the narrative prose.
 _Avoid_: proof, data, context
 
 **Hypothesis**:
@@ -27,13 +33,14 @@ Produced once per Incident, after the LATS search concludes.
 _Avoid_: diagnosis, answer, result
 
 **incident_type**:
-The canonical category a Hypothesis is classified into — a closed set of six,
-one per (Procedure × failure shape) combination: `auth_failure`,
+The canonical category a Hypothesis is classified into — a closed set of
+eight, one per (Procedure × failure shape) combination: `auth_failure`,
 `registration_reject`, `registration_timeout`, `pdu_session_reject_slice`,
-`pdu_session_reject_other`, `pdu_session_timeout`. Maps one-to-one onto the
+`pdu_session_reject_other`, `pdu_session_timeout`, `sbi_udm_timeout`,
+`sbi_nssf_reject`. Maps one-to-one onto the
 sandbox's failure-injection scenario labels, which supply ground truth for
 `type_accuracy`. New categories are added only when a real failure shape
-doesn't fit any of these six, not speculatively.
+doesn't fit any of these eight, not speculatively.
 _Avoid_: category, label, class
 
 **Action**:

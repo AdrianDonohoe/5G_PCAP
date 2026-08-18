@@ -6,9 +6,11 @@ import sys
 from .capture import read_capture, read_pfcp_capture
 from .ngap import decode as ngap_decode
 from .pfcp import decode as pfcp_decode
+from .sbi import read_sbi_capture
 from .flow import build_flows
 from .kpi import compute
-from .output import print_trace, write_json, print_pfcp_trace, write_pfcp_json
+from .output import (print_trace, write_json, print_pfcp_trace,
+                     write_pfcp_json, print_sbi_trace, write_sbi_json)
 
 
 def analyze(path: str, json_out: str | None) -> int:
@@ -32,7 +34,14 @@ def analyze(path: str, json_out: str | None) -> int:
             write_pfcp_json(pfcp_msgs, json_out)
             print(f"JSON written to {json_out}")
         return 0
-    print(f"error: no NGAP or PFCP messages found in {path}")
+    sbi_raw = read_sbi_capture(path)
+    if sbi_raw:
+        print_sbi_trace(sbi_raw)
+        if json_out:
+            write_sbi_json(sbi_raw, json_out)
+            print(f"JSON written to {json_out}")
+        return 0
+    print(f"error: no NGAP, PFCP, or SBI messages found in {path}")
     return 1
 
 

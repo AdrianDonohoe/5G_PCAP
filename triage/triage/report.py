@@ -74,18 +74,31 @@ def _incident_type(episode: Episode | None, raw: dict | None) -> str | None:
     return raw.get("incident_type") if raw else None
 
 
+def _flow_label(result: dict) -> str:
+    """The flow identity for display: "SBI — {procedure}" for SBI-plane
+    results (they carry no N2 flow), "flow {id}" otherwise."""
+    if result.get("plane") == "sbi":
+        return f"SBI — {result.get('procedure') or 'unknown'}"
+    return f"flow {result.get('flow_id')}"
+
+
 def _header_lines(result: dict, episode, raw) -> list[str]:
     incident_type = _incident_type(episode, raw)
     flow_id = result.get("flow_id")
     lines = []
     if incident_type is None:
-        lines.append(f"# Post-incident report — no hypothesis (flow {flow_id})")
+        lines.append(f"# Post-incident report — no hypothesis "
+                     f"({_flow_label(result)})")
     else:
         lines.append(f"# Post-incident report — {incident_type}")
     lines.append("")
-    lines.append(f"**Flow:** {flow_id} — "
-                 f"{result.get('procedure') or 'unknown'}, "
-                 f"{result.get('shape') or 'unknown'}")
+    if result.get("plane") == "sbi":
+        lines.append(f"**Flow:** {_flow_label(result)}, "
+                     f"{result.get('shape') or 'unknown'}")
+    else:
+        lines.append(f"**Flow:** {flow_id} — "
+                     f"{result.get('procedure') or 'unknown'}, "
+                     f"{result.get('shape') or 'unknown'}")
     if result.get("detail"):
         lines.append(f"**Incident detail:** {result['detail']}")
     if incident_type is not None:
@@ -110,7 +123,11 @@ def _multi_report(results: list[dict], capture: DecodedCapture, graph) -> str:
              "|---|------|------------|--------|----------|"]
     for i, result in enumerate(results, 1):
         episode, raw = _episode_parts(result)
-        lines.append(f"| {i} | {result.get('flow_id')} | "
+        # the cell stays the bare id for N2 flows; SBI results name their
+        # service instead
+        cell = (_flow_label(result) if result.get("plane") == "sbi"
+                else result.get("flow_id"))
+        lines.append(f"| {i} | {cell} | "
                      f"{_incident_type(episode, raw) or '—'} | "
                      f"{result.get('reward', 0.0)} | "
                      f"{result.get('rollouts', 0)} |")
@@ -120,7 +137,7 @@ def _multi_report(results: list[dict], capture: DecodedCapture, graph) -> str:
         flow_id = result.get("flow_id")
         lines.append(f"## Incident {i} — "
                      f"{_incident_type(episode, raw) or 'no hypothesis'} "
-                     f"— flow {flow_id}")
+                     f"— {_flow_label(result)}")
         lines.append("")
         if result.get("detail"):
             lines.append(f"**Incident detail:** {result['detail']}")
@@ -151,8 +168,12 @@ def _sections(result: dict, capture: DecodedCapture, graph,
     spec_lines = _spec_section(graph, episode)
     if spec_lines:
         lines += [f"{head} Spec context"] + spec_lines + [""]
-    lines += [f"{head} Timeline (flow {flow_id})"]
-    lines += _timeline_lines(capture, flow_id)
+    if result.get("plane") == "sbi":
+        lines += [f"{head} Timeline (SBI)"]
+        lines += _sbi_timeline_lines(capture)
+    else:
+        lines += [f"{head} Timeline (flow {flow_id})"]
+        lines += _timeline_lines(capture, flow_id)
     lines += ["", f"{head} Capture KPIs", _kpi_line(capture), "",
               f"{head} Search path"] + _search_path_lines(result) + ["",
               f"{head} Memory", _memory_line(result, episode), ""]
@@ -265,6 +286,38 @@ def _timeline_lines(capture: DecodedCapture, flow_id) -> list[str]:
         lines.append(line)
     if len(lines) > 50:
         lines = lines[:50] + [f"... ({len(lines) - 50} more not shown)"]
+    return lines
+
+
+def _sbi_timeline_lines(capture: DecodedCapture) -> list[str]:
+    """The SBI messages in order; each request shows the status its
+    response carried ("no response" when the capture ended unanswered),
+    each response its status. The [i] indices match the sbi:<i> handles."""
+    msgs = (capture.sbi or {}).get("messages") or []
+    if not msgs:
+        return ["(no SBI messages in this capture)"]
+    # responses by their (src, dst, stream): a request finds its answer on
+    # the flipped connection tuple
+    responses = {(m.get("src_ip"), m.get("src_port"),
+                  m.get("dst_ip"), m.get("dst_port"),
+                  m.get("stream_id")): m
+                 for m in msgs if m.get("direction") == "response"}
+    lines = []
+    for i, msg in enumerate(msgs, 1):
+        line = f"[{i}] {fmt_ts(msg.get('ts'))}s  "
+        if msg.get("direction") == "request":
+            rsp = responses.get((msg.get("dst_ip"), msg.get("dst_port"),
+                                 msg.get("src_ip"), msg.get("src_port"),
+                                 msg.get("stream_id")))
+            status = rsp.get("status") if rsp is not None else None
+            outcome = str(status) if status is not None else "no response"
+            line += f"{msg.get('method') or '?'} {msg.get('path') or '?'} " \
+                    f"-> {outcome}"
+        else:
+            status = msg.get("status")
+            line += f"-> {status if status is not None else '?'}"
+        line += f"  ({msg.get('name') or '?'})"
+        lines.append(line)
     return lines
 
 

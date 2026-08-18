@@ -1,7 +1,7 @@
 """detect_incidents tests against the sandbox fixtures' real wire shapes
-(no models, no network — synthetic n2 dicts only)."""
+(no models, no network — synthetic n2/sbi dicts only)."""
 
-from triage.incidents import detect_incidents
+from triage.incidents import detect_incidents, detect_sbi_incidents
 
 
 def msg(ts, nas="", inner="", ngap="", cause=None):
@@ -34,7 +34,8 @@ def test_reject_procedure_detected():
              "5GMMRegistrationReject")])]}
     incidents = detect_incidents(n2)
     assert len(incidents) == 1
-    assert incidents[0] == {"flow_id": 2, "procedure": "Registration",
+    assert incidents[0] == {"plane": "n2", "flow_id": 2,
+                            "procedure": "Registration",
                             "shape": "explicit reject"}
 
 
@@ -92,7 +93,8 @@ def test_lone_request_without_procedures_is_timeout():
     n2 = {"flows": [flow(1, messages=[msg(1.0, nas="5GMMRegistrationRequest")])]}
     incidents = detect_incidents(n2)
     assert len(incidents) == 1
-    assert incidents[0] == {"flow_id": 1, "procedure": "Registration",
+    assert incidents[0] == {"plane": "n2", "flow_id": 1,
+                            "procedure": "Registration",
                             "shape": "no terminal message (timeout)"}
 
 
@@ -141,3 +143,37 @@ def test_unknown_procedure_kind_keeps_its_name():
 def test_empty_flow_skipped():
     assert detect_incidents({"flows": [flow(1)]}) == []
     assert detect_incidents({}) == []
+
+
+def sbi_proc(kind, outcome, status=None):
+    p = {"kind": kind, "outcome": outcome}
+    if status is not None:
+        p["status"] = status
+    return p
+
+
+def test_sbi_reject_detected():
+    # sbi_nssf_reject: the NSSelection consult comes back 403
+    sbi = {"procedures": [
+        sbi_proc("Nnrf_NFDiscovery", "accept", 200),
+        sbi_proc("Nnssf_NSSelection", "reject", 403)]}
+    incidents = detect_sbi_incidents(sbi)
+    assert incidents == [{"plane": "sbi", "flow_id": None,
+                          "procedure": "Nnssf_NSSelection",
+                          "shape": "explicit reject",
+                          "detail": "SBI status code(s) observed: 403"}]
+
+
+def test_sbi_timeout_detected():
+    # sbi_udm_timeout: the AUSF's Nudm_UEAuthentication is never answered
+    sbi = {"procedures": [sbi_proc("Nudm_UEAuthentication", "timeout")]}
+    incidents = detect_sbi_incidents(sbi)
+    assert incidents == [{"plane": "sbi", "flow_id": None,
+                          "procedure": "Nudm_UEAuthentication",
+                          "shape": "no terminal message (timeout)"}]
+
+
+def test_sbi_accept_procedures_skipped():
+    assert detect_sbi_incidents(
+        {"procedures": [sbi_proc("Nudm_SDM", "accept", 200)]}) == []
+    assert detect_sbi_incidents({}) == []

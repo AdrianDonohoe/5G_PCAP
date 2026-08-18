@@ -13,36 +13,42 @@ step can enumerate the Action space deterministically:
     unassociated:<i>  one such message
     n4                one line per PFCP message
     n4:<i>            one PFCP message
+    sbi               one line per SBI (HTTP/2) message
+    sbi:<i>           one SBI message
 
 Lenient by design (ADR-0001): unrecognized or out-of-range handles degrade
 to an honest "no such evidence" observation, never a crash; capture dicts
 are read with .get() so a missing key merely omits a field. The inputs are
-5gcap's --json exports (N2 = {kpis, flows, unassociated}, N4 = {messages,
-procedures, unpaired_requests}); their shape is 5gcap's contract, not this
-module's.
+5gcap's --json exports (N2 = {kpis, flows, unassociated}, N4 and SBI =
+{messages, procedures, unpaired_requests}); their shape is 5gcap's
+contract, not this module's.
 """
 
 import json
 from dataclasses import dataclass
 from pathlib import Path
 
-HANDLES = ("kpis, flows, unassociated, n4, flow:<id>, flow:<id>:<i>, "
-           "unassociated:<i>, or n4:<i>")
+HANDLES = ("kpis, flows, unassociated, n4, sbi, flow:<id>, flow:<id>:<i>, "
+           "unassociated:<i>, n4:<i>, or sbi:<i>")
 
 
 @dataclass
 class DecodedCapture:
-    """5gcap's decoded output: the N2 export plus the optional N4 export."""
+    """5gcap's decoded output: the N2 export plus optional N4/SBI exports."""
     n2: dict
     n4: dict | None = None
+    sbi: dict | None = None
 
 
-def load_capture(n2_path: Path, n4_path: Path | None = None) -> DecodedCapture:
+def load_capture(n2_path: Path, n4_path: Path | None = None,
+                 sbi_path: Path | None = None) -> DecodedCapture:
     """Load the --json exports; file/JSON errors propagate to the CLI."""
     n2 = json.loads(Path(n2_path).read_text(encoding="utf-8"))
     n4 = json.loads(Path(n4_path).read_text(encoding="utf-8")) \
         if n4_path is not None else None
-    return DecodedCapture(n2=n2, n4=n4)
+    sbi = json.loads(Path(sbi_path).read_text(encoding="utf-8")) \
+        if sbi_path is not None else None
+    return DecodedCapture(n2=n2, n4=n4, sbi=sbi)
 
 
 def _unrecognized(handle: str) -> str:
@@ -185,6 +191,50 @@ def _n4_view(i: int, msg: dict) -> str:
     return "\n".join(lines)
 
 
+def _sbi_listing(capture: DecodedCapture) -> str:
+    msgs = capture.sbi.get("messages") or []
+    lines = [f"SBI (HTTP/2) messages ({len(msgs)}):"]
+    for i, msg in enumerate(msgs, 1):
+        line = f"  [{i}] {fmt_ts(msg.get('ts'))}  "
+        if msg.get("direction") == "request":
+            line += f"{msg.get('method') or '?'} {msg.get('path') or '?'}"
+        else:
+            line += f"-> {msg.get('status') if msg.get('status') is not None else '?'}"
+        line += f"  ({msg.get('name') or '?'})"
+        if msg.get("problem_title"):
+            line += f'  problem="{msg.get("problem_title")}"'
+        if msg.get("problem_cause"):
+            line += f'  cause="{msg.get("problem_cause")}"'
+        if msg.get("unparsed"):
+            line += f"  [unparsed: {msg.get('unparsed')}]"
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _sbi_view(i: int, msg: dict) -> str:
+    lines = [f"Evidence sbi:{i}:",
+             f"  ts={fmt_ts(msg.get('ts'))}",
+             f"  {msg.get('src_ip') or '?'}:{msg.get('src_port')} -> "
+             f"{msg.get('dst_ip') or '?'}:{msg.get('dst_port')}",
+             f"  direction={msg.get('direction') or '?'}"]
+    if msg.get("direction") == "request":
+        lines.append(f"  method={msg.get('method') or '?'}")
+        lines.append(f"  path={msg.get('path') or '?'}")
+    else:
+        status = msg.get("status")
+        lines.append(f"  status={status if status is not None else '?'}")
+    lines.append(f"  name={msg.get('name') or '?'}")
+    if msg.get("stream_id") is not None:
+        lines.append(f"  stream_id={msg.get('stream_id')}")
+    if msg.get("problem_title"):
+        lines.append(f'  problem_title="{msg.get("problem_title")}"')
+    if msg.get("problem_cause"):
+        lines.append(f'  problem_cause="{msg.get("problem_cause")}"')
+    if msg.get("unparsed"):
+        lines.append(f"  unparsed: {msg.get('unparsed')}")
+    return "\n".join(lines)
+
+
 def _dispatch_indexed(msgs: list, kind: str, handle: str,
                       view) -> str:
     """Shared n4:<i> / unassociated:<i> parsing + bounds checks."""
@@ -235,6 +285,10 @@ def inspect_decoded_evidence(capture: DecodedCapture, handle: str) -> str:
             if capture.n4 is None:
                 return "inspect_decoded_evidence: no N4 capture loaded"
             return _n4_listing(capture)
+        if h == "sbi":
+            if capture.sbi is None:
+                return "inspect_decoded_evidence: no SBI capture loaded"
+            return _sbi_listing(capture)
         if h.startswith("flow:"):
             return _dispatch_flow(capture, h)
         if h.startswith("unassociated:"):
@@ -245,6 +299,11 @@ def inspect_decoded_evidence(capture: DecodedCapture, handle: str) -> str:
                 return "inspect_decoded_evidence: no N4 capture loaded"
             return _dispatch_indexed(capture.n4.get("messages") or [],
                                      "n4", h, _n4_view)
+        if h.startswith("sbi:"):
+            if capture.sbi is None:
+                return "inspect_decoded_evidence: no SBI capture loaded"
+            return _dispatch_indexed(capture.sbi.get("messages") or [],
+                                     "sbi", h, _sbi_view)
         return _unrecognized(handle)
     except Exception as exc:  # ADR-0001: degrade, never kill the search
         return (f'inspect_decoded_evidence: couldn\'t inspect "{handle}" '

@@ -292,9 +292,13 @@ def test_evaluate_failure_degrades():
     def boom(objective, trajectory):
         raise RuntimeError("llm down")
 
+    # a stub index: without one, "spec cause 91" would fall through to the
+    # production SpecIndex and (on a stale cache) start a full corpus
+    # embed — ADR-0002's suite must never cost that.
     result = run_lats(mini_capture(),
                       {"flow_id": 1, "procedure": "registration"},
-                      expand=scripted_expand(), evaluate=boom)
+                      expand=scripted_expand(), evaluate=boom,
+                      spec_index=StubSpecIndex())
     assert result.episode is None  # every node failed, search survived
 
 
@@ -308,8 +312,20 @@ def test_objective_text():
                           "registration_timeout",
                           "pdu_session_reject_slice",
                           "pdu_session_reject_other",
-                          "pdu_session_timeout"):
+                          "pdu_session_timeout",
+                          "sbi_udm_timeout", "sbi_nssf_reject"):
         assert incident_type in text
+
+
+def test_objective_text_sbi_incident():
+    text = objective_text({"plane": "sbi", "flow_id": None,
+                           "procedure": "Nudm_UEAuthentication",
+                           "shape": "no terminal message (timeout)"})
+    assert "Nudm_UEAuthentication procedure failed" in text
+    assert "on the SBI plane" in text
+    assert "flow None" not in text
+    assert "sbi[:<i>]" in text  # the handle space lists the SBI handles
+    assert "There is no reject message" in text  # timeout special-case fires
 
 
 def test_objective_text_includes_memory_context():
@@ -341,6 +357,62 @@ def test_memory_context_empty_store(tmp_path):
     assert memory_context(MemoryStore(tmp_path / "none.jsonl"),
                           {"flow_id": 1, "procedure": "Registration"},
                           flow) == ""
+
+
+def sbi_capture():
+    return DecodedCapture(n2={}, sbi={
+        "messages": [{
+            "ts": 1000.0, "src_ip": "10.0.0.3", "dst_ip": "10.0.0.4",
+            "src_port": 50001, "dst_port": 7777, "stream_id": 1,
+            "direction": "request", "method": "GET",
+            "path": "/nnssf-nsselection/v1/network-slice-information",
+            "status": None, "body_len": 0, "service": "Nnssf_NSSelection",
+            "name": "Nnssf_NSSelection", "problem_title": None,
+            "problem_cause": None, "unparsed": None},
+            {"ts": 1000.5, "src_ip": "10.0.0.4", "dst_ip": "10.0.0.3",
+             "src_port": 7777, "dst_port": 50001, "stream_id": 1,
+             "direction": "response", "method": None, "path": None,
+             "status": 403, "body_len": 57, "service": "Nnssf_NSSelection",
+             "name": "Nnssf_NSSelection",
+             "problem_title": "Cannot find NSI",
+             "problem_cause": "SNSSAI_NOT_SUPPORTED", "unparsed": None}],
+        "procedures": [], "unpaired_requests": 0})
+
+
+def test_sbi_evidence_grounds():
+    # cited (service name, ts) matches an SBI message; cause is null
+    episode = json.dumps({
+        "incident_type": "sbi_nssf_reject",
+        "narrative": "the NSSF rejected the slice consult with 403",
+        "cited_evidence": [{"message": "Nnssf_NSSelection", "cause": None,
+                            "ts": 1000.5}]})
+    observation, ep = execute_action(sbi_capture(), f"finalize {episode}")
+    assert "finalize accepted" in observation
+    assert ep.incident_type == "sbi_nssf_reject"
+
+
+def test_sbi_evidence_ungrounded_without_sbi_loaded():
+    episode = json.dumps({
+        "incident_type": "sbi_nssf_reject",
+        "narrative": "x",
+        "cited_evidence": [{"message": "Nnssf_NSSelection", "cause": None,
+                            "ts": 1000.5}]})
+    observation, ep = execute_action(mini_capture(), f"finalize {episode}")
+    assert "no cited evidence matches a decoded message" in observation
+    assert ep is None
+
+
+def test_memory_context_sbi_incident(tmp_path):
+    # flow_id None -> no N2 flow to mine; the procedure itself is the
+    # service, and sbi_nssf_reject maps onto "PDU Session" episodes
+    store = MemoryStore(tmp_path / "episodes.jsonl")
+    store.add({"incident_type": "sbi_nssf_reject",
+               "narrative": "NSSF 403 on a past run",
+               "cited_evidence": [{"message": "Nnssf_NSSelection",
+                                   "ts": 999.0}]})
+    text = memory_context(store, {"plane": "sbi", "flow_id": None,
+                                  "procedure": "PDU Session"}, None)
+    assert "NSSF 403 on a past run" in text
 
 
 def test_run_lats_seeds_objective_with_memory(tmp_path):

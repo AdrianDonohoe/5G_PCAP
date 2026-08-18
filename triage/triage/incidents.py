@@ -1,5 +1,5 @@
 """Incident detection: find failed Registration / PDU Session procedures in
-5gcap's decode output.
+5gcap's decode output, on both the N2 and SBI planes.
 
 CONTEXT.md: an Incident is a single failed Procedure within one Flow — an
 explicit Reject with a cause code, or a Partial Flow whose terminal message
@@ -14,6 +14,12 @@ sandbox/README.md) pin the real wire shapes this matches:
   paused-AMF capture holds a lone RegistrationRequest), a partial flow, or a
   cause echoed on a *request* message (the blackholed SMF echoes the UE's
   PDU request back with #90, 10 s apart — no reject at all).
+
+The SBI plane reuses the same two shape literals: an SBI procedure is a
+request/response pair (HTTP status), so an explicit reject is a response
+with status >= 400 and a timeout is a request never answered by capture
+end. SBI incidents carry flow_id None — SBI messages are not correlated to
+N2 flows — and cite the service name as their procedure.
 """
 
 import re
@@ -65,7 +71,7 @@ def detect_incidents(n2: dict) -> list[dict]:
         timeout = bool(messages) and not flow.get("procedures") and not failed
         if not failed and not causes and not timeout and not flow.get("partial"):
             continue
-        incident = {"flow_id": flow.get("flow_id"),
+        incident = {"plane": "n2", "flow_id": flow.get("flow_id"),
                     "procedure": _procedure(flow, failed),
                     "shape": _shape(messages, failed)}
         if causes:
@@ -73,5 +79,22 @@ def detect_incidents(n2: dict) -> list[dict]:
                             if m["nas_cause"].get("code")})
             incident["detail"] = "cause code(s) observed: " + \
                 ", ".join(f"#{code}" for code in codes)
+        incidents.append(incident)
+    return incidents
+
+
+def detect_sbi_incidents(sbi: dict) -> list[dict]:
+    """One Incident per failed SBI procedure (reject or timeout)."""
+    incidents = []
+    for p in sbi.get("procedures") or []:
+        if p.get("outcome") not in ("reject", "timeout"):
+            continue
+        incident = {"plane": "sbi", "flow_id": None,
+                    "procedure": p.get("kind") or "unknown",
+                    "shape": ("explicit reject" if p.get("outcome") == "reject"
+                              else "no terminal message (timeout)")}
+        if p.get("outcome") == "reject":
+            incident["detail"] = "SBI status code(s) observed: " + \
+                str(p.get("status"))
         incidents.append(incident)
     return incidents

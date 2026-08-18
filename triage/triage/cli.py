@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 from triage.evidence import load_capture
-from triage.incidents import detect_incidents
+from triage.incidents import detect_incidents, detect_sbi_incidents
 from triage.memory import MemoryStore, consolidate
 from triage.report import build_report, load_graph, write_report
 from triage.search import run_lats
@@ -37,12 +37,15 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         "analyze",
         help="one LATS search per failed Incident in a decoded capture",
         description="Consumes 5gcap's --json decode output (N2; optionally "
-                    "N4 with --n4).")
+                    "N4 with --n4 and SBI with --sbi).")
     analyze.add_argument("n2_json", help="5gcap --json decode output (N2)")
     analyze.add_argument("--n4", metavar="N4.json",
                          help="optional 5gcap N4 decode output")
+    analyze.add_argument("--sbi", metavar="SBI.json",
+                         help="optional 5gcap SBI decode output")
     analyze.add_argument("--flow", type=int,
-                         help="only triage Incidents in this flow")
+                         help="only triage Incidents in this N2 flow "
+                              "(SBI Incidents have no flow)")
     analyze.add_argument("--episodes-path", metavar="PATH",
                          help="episodic memory store override (default: "
                               "triage/memory/episodes.jsonl)")
@@ -64,6 +67,8 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     report.add_argument("n2_json", help="5gcap --json decode output (N2)")
     report.add_argument("--n4", metavar="N4.json",
                         help="optional 5gcap N4 decode output")
+    report.add_argument("--sbi", metavar="SBI.json",
+                        help="optional 5gcap SBI decode output")
     report.add_argument("-o", "--out", metavar="PATH",
                         help="also write the report to this file")
     return parser.parse_args(argv)
@@ -71,6 +76,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 def _result(incident: dict, episode, result, wrote: bool) -> dict:
     return {
+        "plane": incident.get("plane", "n2"),
         "flow_id": incident.get("flow_id"),
         "procedure": incident.get("procedure"),
         "shape": incident.get("shape"),
@@ -97,7 +103,7 @@ def _report(args: argparse.Namespace) -> int:
               file=sys.stderr)
         return 1
     try:
-        capture = load_capture(args.n2_json, args.n4)
+        capture = load_capture(args.n2_json, args.n4, args.sbi)
     except Exception as exc:  # JSON/IO errors in the decode files
         print(f"triage: error: cannot load {args.n2_json}: {exc}",
               file=sys.stderr)
@@ -119,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "report":
         return _report(args)
     try:
-        capture = load_capture(args.n2_json, args.n4)
+        capture = load_capture(args.n2_json, args.n4, args.sbi)
     except Exception as exc:  # JSON/IO errors in the decode files
         print(f"triage: error: cannot load {args.n2_json}: {exc}",
               file=sys.stderr)
@@ -127,7 +133,10 @@ def main(argv: list[str] | None = None) -> int:
     store = MemoryStore(Path(args.episodes_path)) if args.episodes_path \
         else MemoryStore()
     incidents = detect_incidents(capture.n2)
+    if capture.sbi is not None:
+        incidents += detect_sbi_incidents(capture.sbi)
     if args.flow is not None:
+        # SBI Incidents have no flow, so this keeps N2 Incidents only.
         incidents = [i for i in incidents if i.get("flow_id") == args.flow]
 
     if not incidents:
@@ -139,7 +148,10 @@ def main(argv: list[str] | None = None) -> int:
     else:
         results = []
         for n, incident in enumerate(incidents, 1):
-            print(f"[{n}/{len(incidents)}] flow {incident['flow_id']} "
+            where = (f"flow {incident['flow_id']}"
+                     if incident.get("flow_id") is not None
+                     else f"SBI {incident['procedure']}")
+            print(f"[{n}/{len(incidents)}] {where} "
                   f"{incident['procedure']} ({incident['shape']})",
                   file=sys.stderr)
             try:

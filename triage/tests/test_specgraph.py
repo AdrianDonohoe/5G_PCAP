@@ -16,7 +16,8 @@ from triage.specgraph import EntityRef, SpecGraph
 from triage.specrag import CHUNKS, SpecIndex, query_3gpp_spec
 
 SPEC_TITLES = {"24501": "TS 24.501", "38413": "TS 38.413",
-               "29244": "TS 29.244"}
+               "29244": "TS 29.244", "29500": "TS 29.500",
+               "29503": "TS 29.503", "29531": "TS 29.531"}
 
 
 def write_corpus(path, chunks):
@@ -158,7 +159,39 @@ def pfcp_fixture():
     ]
 
 
-FIXTURE_CHUNKS = nas_fixture() + ngap_fixture() + pfcp_fixture()
+SBI_29_531_GET_BODY = (
+    "The Nnssf_NSSelection_Get service operation shall provide the\n"
+    "requested slice selection information to the consumer NF.\n"
+)
+
+
+def sbi_fixture():
+    return [
+        chunk("29531", "5.2", "Nnssf_NSSelection Service", [
+            "5\tNnssf_NSSelection Service"],
+            "The Nnssf_NSSelection service provides network slice "
+            "selection information to its consumers.\n"),
+        chunk("29531", "5.2.2.2", "Nnssf_NSSelection_Get Operation", [
+            "5\tNnssf_NSSelection Service",
+            "5.2\tService Description",
+            "5.2.2\tService Operations"],
+            SBI_29_531_GET_BODY),
+        chunk("29531", "5.2.2.1", "Introduction", [
+            "5\tNnssf_NSSelection Service",
+            "5.2\tService Description",
+            "5.2.2\tService Operations"],
+            "Both the Nnssf_NSSelection_Get and Nnssf_NSSelection_Store\n"
+            "operations are introduced here; an Npcf_PolicyAuthorization\n"
+            "consult is out of scope.\n"),
+        chunk("29500", "5.2.4", "ProblemDetails", [
+            "5\tAPI Definitions", "5.2\tStructured data types"],
+            "The ProblemDetails data type shall be returned by an NF "
+            "service producer when an error occurs.\n"),
+    ]
+
+
+FIXTURE_CHUNKS = nas_fixture() + ngap_fixture() + pfcp_fixture() + \
+    sbi_fixture()
 
 
 def make_graph(tmp_path, chunks=FIXTURE_CHUNKS):
@@ -283,6 +316,30 @@ def test_messages_filtered(graph):
     assert all(m.pattern_derived and m.clause == "9.4.3" for m in ngap)
 
 
+def test_sbi_message_entities(graph):
+    sbi = {(e.clause, e.name): e for e in graph._entities
+           if e.type == "message" and e.spec == "29531"}
+    # heading-derived: the service clause and the operation clause
+    service = sbi[("5.2", "Nnssf_NSSelection")]
+    assert not service.pattern_derived and service.protocol == "SBI"
+    operation = sbi[("5.2.2.2", "Nnssf_NSSelection_Get")]
+    assert not operation.pattern_derived
+    # body-derived: mentioned in 5.2.2.1, whose own headings never name it;
+    # the "_Store" sibling passes on the "Nnssf" family prefix alone
+    for key in (("5.2.2.1", "Nnssf_NSSelection_Get"),
+                ("5.2.2.1", "Nnssf_NSSelection_Store")):
+        assert sbi[key].pattern_derived
+    # an unseen family never enters the vocabulary
+    assert not any(e.name.startswith("Npcf") for e in sbi.values())
+
+
+def test_problem_details_entity(graph):
+    pd = [e for e in graph._entities
+          if e.type == "message" and e.spec == "29500"]
+    assert [(e.name, e.clause, e.pattern_derived) for e in pd] == \
+        [("ProblemDetails", "5.2.4", False)]
+
+
 def test_co_mentioned_edges(graph):
     data = json.loads(graph._cache_path().read_text())
     co = {(e["src"], e["dst"]): e for e in data["edges"]
@@ -349,6 +406,16 @@ def test_resolve_name_branch(graph):
     ref = graph.resolve("registration procedure")
     assert ref.type == "procedure" and ref.name == "Registration procedure"
     assert graph.resolve("unrelated prose query") is None
+
+
+def test_resolve_sbi_names(graph):
+    ref = graph.resolve("Nnssf_NSSelection")
+    assert ref.type == "message" and ref.name == "Nnssf_NSSelection"
+    # longest normalized key wins: the operation outranks the service
+    ref = graph.resolve("the Nnssf_NSSelection_Get operation failed")
+    assert ref.name == "Nnssf_NSSelection_Get"
+    ref = graph.resolve("ProblemDetails")
+    assert ref.type == "message" and ref.name == "ProblemDetails"
 
 
 def test_entity_block(graph):
@@ -495,3 +562,20 @@ def test_fixture_observation_header(real_graph, tmp_path_factory):
     obs = query_3gpp_spec("cause #21", top_k=2, index=index, graph=real_graph)
     assert obs.startswith('3GPP spec retrieval for "cause #21" '
                           "(2 hit(s); entity: 5GMM cause #21):")
+
+
+def test_sbi_service_resolves_in_real_corpus(real_graph):
+    # clause numbers drift across spec versions, so pin only the identity
+    ref = real_graph.resolve("Nnssf_NSSelection")
+    assert ref is not None
+    assert ref.type == "message" and ref.spec == "29531"
+    assert ref.name == "Nnssf_NSSelection" and ref.protocol == "SBI"
+    auth = real_graph.resolve("Nudm_UEAuthentication")
+    assert auth is not None
+    assert auth.type == "message" and auth.spec == "29503"
+    assert auth.name == "Nudm_UEAuthentication"
+    # the decoder's short service name bridges to the spec's prose alias
+    # ("Nudm_SDM" only ever appears in bodies, never in a heading)
+    sdm = real_graph.resolve("Nudm_SDM")
+    assert sdm is not None and sdm.name == "Nudm_SDM"
+    assert sdm.spec == "29503" and sdm.pattern_derived

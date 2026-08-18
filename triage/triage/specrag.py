@@ -8,7 +8,7 @@ doesn't. The corpus is embedded with a local CPU model (fastembed's
 BAAI/bge-small-en-v1.5, 384-dim) on first use and cached under
 corpus/cache/index/ (gitignored), keyed by model + chunks.jsonl sha256 so
 the index rebuilds exactly when the corpus changes. The first build embeds
-~3500 chunks and takes ~15-30 min of CPU on a 2-vCPU machine; afterwards
+~5000 chunks and takes ~15-30 min of CPU on a 2-vCPU machine; afterwards
 every run loads the cache. Nothing is uploaded; the only network use is
 fastembed's one-time model download.
 

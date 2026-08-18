@@ -192,3 +192,80 @@ def test_empty_capture_degrades():
     assert inspect_decoded_evidence(capture, "flow:1") == \
         "inspect_decoded_evidence: no flow 1 in the capture (0 flow(s))"
     assert inspect_decoded_evidence(capture, "kpis") == "Decode KPIs:"
+
+
+def sbi_capture():
+    """A synthetic SBI export: one accepted request/response pair and one
+    403 with ProblemDetails."""
+    return DecodedCapture(n2={}, sbi={
+        "messages": [
+            {"ts": 1.0, "src_ip": "10.53.0.22", "dst_ip": "10.53.0.21",
+             "src_port": 50001, "dst_port": 7777, "stream_id": 1,
+             "direction": "request", "method": "GET",
+             "path": "/nnssf-nsselection/v1/network-slice-information",
+             "status": None, "body_len": 0, "service": "Nnssf_NSSelection",
+             "name": "Nnssf_NSSelection", "problem_title": None,
+             "problem_cause": None, "unparsed": None},
+            {"ts": 1.5, "src_ip": "10.53.0.21", "dst_ip": "10.53.0.22",
+             "src_port": 7777, "dst_port": 50001, "stream_id": 1,
+             "direction": "response", "method": None, "path": None,
+             "status": 403, "body_len": 57,
+             "service": "Nnssf_NSSelection", "name": "Nnssf_NSSelection",
+             "problem_title": "Cannot find NSI",
+             "problem_cause": "SNSSAI_NOT_SUPPORTED", "unparsed": None},
+            {"ts": 0.5, "src_ip": "10.53.0.20", "dst_ip": "10.53.0.23",
+             "src_port": 50002, "dst_port": 7777, "stream_id": 1,
+             "direction": "request", "method": "POST",
+             "path": "/nudm-sdm/v1/supi", "status": None, "body_len": 0,
+             "service": "Nudm_SDM", "name": "Nudm_SDM",
+             "problem_title": None, "problem_cause": None, "unparsed": None},
+        ],
+        "procedures": [
+            {"kind": "Nudm_SDM", "start_ts": 0.5, "end_ts": 0.6,
+             "start_msg": "POST /nudm-sdm/v1/supi", "end_msg": "200",
+             "outcome": "accept", "status": 200},
+            {"kind": "Nnssf_NSSelection", "start_ts": 1.0, "end_ts": 1.5,
+             "start_msg": "GET /nnssf-nsselection/v1/network-slice-information",
+             "end_msg": "403", "outcome": "reject", "status": 403}],
+        "unpaired_requests": 0})
+
+
+def test_sbi_listing():
+    out = inspect_decoded_evidence(sbi_capture(), "sbi")
+    assert out.startswith("SBI (HTTP/2) messages (3):")
+    assert "[1] 1.000  GET /nnssf-nsselection/v1/network-slice-information" \
+        "  (Nnssf_NSSelection)" in out
+    assert "[2] 1.500  -> 403  (Nnssf_NSSelection)  " \
+        'problem="Cannot find NSI"  cause="SNSSAI_NOT_SUPPORTED"' in out
+    assert "[3] 0.500  POST /nudm-sdm/v1/supi  (Nudm_SDM)" in out
+
+
+def test_sbi_view_request_and_response():
+    capture = sbi_capture()
+    out = inspect_decoded_evidence(capture, "sbi:1")
+    assert out.startswith("Evidence sbi:1:")
+    assert "10.53.0.22:50001 -> 10.53.0.21:7777" in out
+    assert "direction=request" in out
+    assert "method=GET" in out
+    assert "path=/nnssf-nsselection/v1/network-slice-information" in out
+    assert "name=Nnssf_NSSelection" in out
+    out = inspect_decoded_evidence(capture, "sbi:2")
+    assert "direction=response" in out
+    assert "status=403" in out
+    assert 'problem_title="Cannot find NSI"' in out
+    assert 'problem_cause="SNSSAI_NOT_SUPPORTED"' in out
+
+
+def test_no_sbi_capture_degrades():
+    capture = load_capture(FIXTURES / "golden_n2.json")
+    for handle in ("sbi", "sbi:1"):
+        out = inspect_decoded_evidence(capture, handle)
+        assert "no SBI capture loaded" in out
+
+
+def test_sbi_handle_bounds():
+    capture = sbi_capture()
+    assert "sbi has 3 message(s); no message 4" in \
+        inspect_decoded_evidence(capture, "sbi:4")
+    assert 'unrecognized handle "sbi:x"' in \
+        inspect_decoded_evidence(capture, "sbi:x")

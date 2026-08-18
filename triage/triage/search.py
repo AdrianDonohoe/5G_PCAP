@@ -41,7 +41,8 @@ TOOLS = ("inspect", "topology", "spec", "memory", "finalize")
 
 INCIDENT_TYPES = ["auth_failure", "registration_reject",
                   "registration_timeout", "pdu_session_reject_slice",
-                  "pdu_session_reject_other", "pdu_session_timeout"]
+                  "pdu_session_reject_other", "pdu_session_timeout",
+                  "sbi_udm_timeout", "sbi_nssf_reject"]
 
 # dspy treats the first segment of the model string as its provider and
 # sends the rest; Groq's own model IDs carry an "openai/" vendor prefix
@@ -94,6 +95,9 @@ def _message_inventory(capture: DecodedCapture) -> dict:
         if msg.get("ngap") and msg.get("ts") is not None:
             inventory[(msg["ngap"], msg["ts"])] = None
     for msg in (capture.n4 or {}).get("messages") or []:
+        if msg.get("name") and msg.get("ts") is not None:
+            inventory[(msg["name"], msg["ts"])] = None
+    for msg in (capture.sbi or {}).get("messages") or []:
         if msg.get("name") and msg.get("ts") is not None:
             inventory[(msg["name"], msg["ts"])] = None
     return inventory
@@ -161,6 +165,10 @@ def _procedure_of(incident_type: str) -> str | None:
         return "Registration"
     if incident_type.startswith("pdu_session"):
         return "PDU Session"
+    if incident_type == "sbi_udm_timeout":
+        return "Registration"  # the hung auth-vector fetch stalls registration
+    if incident_type == "sbi_nssf_reject":
+        return "PDU Session"   # the slice consult happens during PDU session setup
     return None
 
 
@@ -216,8 +224,12 @@ def memory_context(store: MemoryStore, incident: dict, flow) -> str:
 def objective_text(incident: dict, memory: str = "") -> str:
     """The objective the search runs against, from the Incident description
     plus (optionally) relevant past Episodes retrieved from memory."""
-    lines = [f"Explain why the {incident['procedure']} procedure failed for "
-             f"flow {incident['flow_id']} in this decoded 5G capture."]
+    if incident.get("flow_id") is not None:
+        lines = [f"Explain why the {incident['procedure']} procedure failed "
+                 f"for flow {incident['flow_id']} in this decoded 5G capture."]
+    else:  # SBI incidents: no N2 flow; the procedure IS the service
+        lines = [f"Explain why the {incident['procedure']} procedure failed "
+                 f"on the SBI plane in this decoded 5G capture."]
     if incident.get("shape"):
         lines.append(f"Failure shape: {incident['shape']}.")
     if incident.get("shape") == "no terminal message (timeout)":
@@ -233,7 +245,7 @@ def objective_text(incident: dict, memory: str = "") -> str:
                      "must still cite messages decoded in THIS capture.")
     lines.append("Take one action per step. Actions: "
                  '"inspect <handle>" (kpis, flows, flow:<id>, flow:<id>:<i>, '
-                 "unassociated[:<i>], n4[:<i>]), \"topology\", "
+                 "unassociated[:<i>], n4[:<i>], sbi[:<i>]), \"topology\", "
                  '"spec <question>", "memory [incident_type=... message=... '
                  'cause=...]", or "finalize <episode JSON>". '
                  "Finish with finalize once the evidence supports a root "
@@ -392,7 +404,7 @@ class ExpandSignature(dspy.Signature):
     one per line, in the format TOOL ARGUMENT.
 
     Tools: inspect <handle> (handles: kpis, flows, flow:<id>, flow:<id>:<i>,
-    unassociated[:<i>], n4[:<i>]), topology, spec <question>,
+    unassociated[:<i>], n4[:<i>], sbi[:<i>]), topology, spec <question>,
     memory [incident_type=... message=... cause=...], or finalize <episode
     JSON>. finalize is the ONLY way to end the search: propose it as soon
     as the trajectory contains the failure's key evidence — a reject
@@ -404,7 +416,8 @@ class ExpandSignature(dspy.Signature):
 
     {"incident_type": "<one of auth_failure, registration_reject,
     registration_timeout, pdu_session_reject_slice,
-    pdu_session_reject_other, pdu_session_timeout>",
+    pdu_session_reject_other, pdu_session_timeout, sbi_udm_timeout,
+    sbi_nssf_reject>",
     "narrative": "<one-sentence root-cause explanation>",
     "cited_evidence": [{"message": "<decoded message name>",
     "cause": <code or null>, "ts": <timestamp from observation>}]}
@@ -421,7 +434,13 @@ class ExpandSignature(dspy.Signature):
     NOT the slice type; pdu_session_reject_other for any other PDU
     Session REJECT (e.g. cause 67); pdu_session_timeout when NO reject
     exists but cause 90 "Payload was not forwarded" echoes on the UE's
-    repeated request with multi-second gaps. Never repeat an action
+    repeated request with multi-second gaps. On the SBI plane: a request
+    answered with HTTP status >= 400 is an explicit reject (cite the
+    service name and ts; the status belongs in the narrative, cause is
+    null) — sbi_nssf_reject when the Nnssf_NSSelection consult is
+    rejected (e.g. 403); an unanswered SBI request is a timeout, and
+    sbi_udm_timeout is the type when a Nudm_* request (e.g. AUSF's
+    Nudm_UEAuthentication) never gets a response. Never repeat an action
     already in the trajectory, and prefer finalize over more
     evidence-gathering once the failure's key evidence has been
     observed."""

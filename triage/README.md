@@ -1,8 +1,9 @@
 # triage
 
 LLM-agent root-cause hypothesis generation for failed 5G Registration and
-PDU Session procedures. One-shot per failed Incident, consuming 5gcap's
-decode output as its evidentiary substrate; evaluated against the sandbox's
+PDU Session procedures and SBI service transactions. One-shot per failed
+Incident, consuming 5gcap's decode output (N2, N4, SBI planes) as its
+evidentiary substrate; evaluated against the sandbox's
 failure-injection fixtures.
 
 The domain language (Incident, Evidence, Hypothesis, incident_type,
@@ -12,7 +13,8 @@ diagnosis_quality) lives in
 the ADRs ([0001](./docs/adr/0001-lats-coala-triage-agent.md),
 [0002](./docs/adr/0002-triage-v1-implementation-choices.md),
 [0003](./docs/adr/0003-spec-graph-typed-entities-and-hybrid-retrieval.md),
-[0004](./docs/adr/0004-post-incident-report-writer.md)). One real
+[0004](./docs/adr/0004-post-incident-report-writer.md),
+[0005](./docs/adr/0005-sbi-plane.md)). One real
 invocation, decision by decision, is in
 [docs/invocation-walkthrough.md](./docs/invocation-walkthrough.md).
 
@@ -47,9 +49,10 @@ test suite run without it.
 
 ```
 5gcap analyze capture.pcap --json capture_n2.json   # decode (a 5gcap step)
-triage analyze capture_n2.json [--n4 capture_n4.json] \
+triage analyze capture_n2.json [--n4 capture_n4.json] [--sbi capture_sbi.json] \
     [--out results.json] [--report report.md]
-triage report --results results.json capture_n2.json [--n4 capture_n4.json]
+triage report --results results.json capture_n2.json [--n4 capture_n4.json] \
+    [--sbi capture_sbi.json]
 ```
 
 `triage analyze` auto-detects the failed Incidents in the decoded capture
@@ -59,7 +62,10 @@ arrived), runs one LATS search per Incident, and prints the hypotheses to
 stdout as a JSON array; progress and memory notes go to stderr. `--flow`
 restricts detection to one flow, `--out` also writes the JSON to a file,
 `--episodes-path` overrides the memory store, and `--verbose` prints each
-winning Trajectory to stderr. Zero Incidents is an empty result with exit
+winning Trajectory to stderr. With `--sbi`, failed SBI procedures (HTTP
+status >= 400, or a request never answered) are added as their own
+Incidents — they carry no flow_id, and `--flow` filters N2 incidents
+only. Zero Incidents is an empty result with exit
 0; exit 1 means the invocation itself failed (e.g. unset `GROQ_API_KEY`).
 
 `triage report` re-renders a saved run (`--out`) as a deterministic
@@ -81,10 +87,11 @@ uv run python evals/run_eval.py  # offline eval (needs GROQ_API_KEY; see evals/R
 
 ## v1 scope
 
-Landed so far: the 3GPP corpus (TS 24.501 / 38.413 / 29.244, pinned 19.x),
+Landed so far: the 3GPP corpus (TS 24.501 / 38.413 / 29.244 / 29.500 /
+29.503 / 29.531, pinned 19.x),
 the package skeleton, `query_topology`, `query_3gpp_spec` (local
 embedding index over the corpus, built on first use and cached — the first
-build embeds ~3500 chunks and takes ~15-30 min of CPU on this VM; afterwards
+build embeds ~5000 chunks and takes ~15-30 min of CPU on this VM; afterwards
 every run loads it from cache), episodic memory (`query_episodic_memory`
 over the local JSON store — the Episode schema is the Pydantic model the
 LATS search reuses for Hypothesis validation; every search objective is
@@ -93,17 +100,24 @@ stored incidents by shared cause codes, message names, and procedure, and
 injects the top matches as context, not evidence), and
 `inspect_decoded_evidence` (deterministic Evidence handles over 5gcap's
 --json exports: `kpis` / `flows` / `flow:<id>[:<i>]` / `unassociated[:<i>]`
-/ `n4[:<i>]`, degrading to honest "no such evidence" observations on bad
+/ `n4[:<i>]` / `sbi[:<i>]`, degrading to honest "no such evidence"
+observations on bad
 handles), the LATS search (`run_lats`: MCTS over Actions — deterministic
 tool dispatch, gpt-oss:120b via Groq for expand/evaluate, and a
 code-enforced completeness bar: a node completes only when its `finalize`
 produces an Episode that validates AND cites evidence grounded in the
-decode), and post-hoc CoALA consolidation (`consolidate`: records the
-finalized Episode exactly once — a re-run of the same capture dedups), and
+decode), the SBI plane (5gcap decodes the plaintext HTTP/2 on the NF
+bridge's 7777; triage detects SBI Incidents, grounds SBI evidence on
+service name + ts, and resolves TS 29.5xx service names through the spec
+graph's SBI dialect — ADR-0005), and post-hoc CoALA consolidation
+(`consolidate`: records the finalized Episode exactly once — a re-run of
+the same capture dedups), and
 the `triage analyze` CLI (Incident detection over 5gcap's decode output,
 one LATS search per Incident, hypotheses as JSON on stdout), and the
 offline eval harness (`evals/run_eval.py`: type_accuracy and
-diagnosis_quality over the six labeled fixtures, with the judge on a model
+diagnosis_quality over the labeled fixtures — the six N2 scenarios plus
+the two sbi_* ones, which join the run once their sandbox pcaps exist —
+with the judge on a model
 distinct from the generator), and the post-incident report writer
 (`triage/report.py`, ADR-0004: deterministic Markdown over a saved run —
 the Episode's narrative verbatim, evidence re-verified against the decode,

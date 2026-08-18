@@ -28,6 +28,8 @@ INCIDENT_TYPES = Literal[
     "pdu_session_reject_slice",
     "pdu_session_reject_other",
     "pdu_session_timeout",
+    "sbi_udm_timeout",
+    "sbi_nssf_reject",
 ]
 
 DEFAULT_PATH = Path(__file__).resolve().parent.parent / "memory" / "episodes.jsonl"
@@ -35,7 +37,7 @@ DEFAULT_PATH = Path(__file__).resolve().parent.parent / "memory" / "episodes.jso
 
 class CitedEvidence(BaseModel):
     """One piece of Evidence from 5gcap's decode output."""
-    message: str             # NGAP or NAS message name
+    message: str             # NGAP/NAS message name or SBI service name
     cause: int | None = None  # NAS cause code, when the message carries one
     ts: float | None = None   # message timestamp in the capture
 

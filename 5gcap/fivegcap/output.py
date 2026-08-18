@@ -6,6 +6,7 @@ from .flow import Flow
 from .kpi import KpiResult
 from .ngap import NgapMsg
 from .pfcp import PfcpMsg, N4Procedure, pair_procedures
+from .sbi import SbiMsg, pair_procedures as pair_sbi_procedures
 
 
 def _fmt_ts(ts: float, t0: float) -> str:
@@ -181,3 +182,71 @@ def to_pfcp_dict(msgs: list[PfcpMsg]) -> dict:
 def write_pfcp_json(msgs: list[PfcpMsg], path: str) -> None:
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(to_pfcp_dict(msgs), fh, indent=2)
+
+
+def print_sbi_trace(msgs: list[SbiMsg]) -> None:
+    t0 = min((m.ts for m in msgs), default=0.0)
+    procedures, unpaired = pair_sbi_procedures(msgs)
+    print(f"{len(msgs)} SBI (HTTP/2) message(s), {len(procedures)} procedure(s) paired, "
+          f"{unpaired} unpaired request(s)")
+    print()
+    for m in msgs:
+        unparsed = f" [unparsed: {m.unparsed}]" if m.unparsed else ""
+        if m.direction == "request":
+            print(f"  {_fmt_ts(m.ts, t0)}  {m.method or '?'} {m.path or '?'}  "
+                  f"({m.name or '?'}){unparsed}")
+        else:
+            print(f"  {_fmt_ts(m.ts, t0)}  "
+                  f"{m.status if m.status is not None else '?'}  "
+                  f"({m.name or '?'}){unparsed}")
+    print()
+    print("SBI procedures")
+    for p in procedures:
+        ms = (p.end_ts - p.start_ts) * 1000.0
+        end = p.end_msg or "(no response)"
+        print(f"  PROCEDURE {p.kind}: {p.start_msg} -> {end} [{p.outcome}] {ms:.1f} ms")
+
+
+def to_sbi_dict(msgs: list[SbiMsg]) -> dict:
+    procedures, unpaired = pair_sbi_procedures(msgs)
+    return {
+        "messages": [
+            {
+                "ts": m.ts,
+                "src_ip": m.src_ip,
+                "dst_ip": m.dst_ip,
+                "src_port": m.src_port,
+                "dst_port": m.dst_port,
+                "stream_id": m.stream_id,
+                "direction": m.direction,
+                "method": m.method,
+                "path": m.path,
+                "status": m.status,
+                "body_len": m.body_len,
+                "service": m.name,
+                "name": m.name,
+                "problem_title": m.problem_title,
+                "problem_cause": m.problem_cause,
+                "unparsed": m.unparsed,
+            }
+            for m in msgs
+        ],
+        "procedures": [
+            {
+                "kind": p.kind,
+                "start_ts": p.start_ts,
+                "end_ts": p.end_ts,
+                "start_msg": p.start_msg,
+                "end_msg": p.end_msg,
+                "outcome": p.outcome,
+                "status": p.status,
+            }
+            for p in procedures
+        ],
+        "unpaired_requests": unpaired,
+    }
+
+
+def write_sbi_json(msgs: list[SbiMsg], path: str) -> None:
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(to_sbi_dict(msgs), fh, indent=2)

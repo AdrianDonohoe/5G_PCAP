@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CHUNKS = ROOT / "corpus" / "chunks.jsonl"
 MANIFEST = ROOT / "corpus" / "manifest.json"
 
-EXPECTED_SPECS = {"24501", "38413", "29244"}
+EXPECTED_SPECS = {"24501", "38413", "29244", "29500", "29503", "29531"}
 
 # The NAS causes that appear in the sandbox failure-injection fixtures; each
 # must be retrievable from the TS 24.501 chunks (compared lowercased: the
@@ -43,7 +43,7 @@ def _manifest():
     return json.loads(MANIFEST.read_text())
 
 
-def test_manifest_covers_the_three_specs():
+def test_manifest_covers_the_six_specs():
     m = _manifest()
     assert set(m["specs"]) == EXPECTED_SPECS
     for entry in m["specs"].values():
@@ -75,3 +75,14 @@ def test_fixture_causes_resolvable_in_24_501():
                       if c["spec"] == "24501").lower()
     for cause in FIXTURE_CAUSES:
         assert cause.lower() in nas5g, cause
+
+
+def test_sbi_service_names_in_corpus():
+    # the SBI scenarios cite these names; the dialect resolves them against
+    # the 29.5xx chunks (exact case: spec prose spells them CamelCase)
+    joined = {spec: "\n".join(c["text"] for c in _chunks()
+                              if c["spec"] == spec)
+              for spec in EXPECTED_SPECS}
+    assert "Nnssf_NSSelection" in joined["29531"]
+    assert "Nudm_UEAuthentication" in joined["29503"]
+    assert "ProblemDetails" in joined["29500"]

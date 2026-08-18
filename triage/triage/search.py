@@ -155,8 +155,67 @@ def execute_action(capture: DecodedCapture, action: str,
             None)
 
 
-def objective_text(incident: dict) -> str:
-    """The objective the search runs against, from the Incident description."""
+def _procedure_of(incident_type: str) -> str | None:
+    """incident_type -> procedure label, for cross-incident similarity."""
+    if incident_type.startswith(("auth", "registration")):
+        return "Registration"
+    if incident_type.startswith("pdu_session"):
+        return "PDU Session"
+    return None
+
+
+def memory_context(store: MemoryStore, incident: dict, flow) -> str:
+    """Relevant past Episodes for one Incident, to seed the search input.
+
+    Retrieval is structural, not semantic (ADR-0002: structured lookup beats
+    a vector DB at this store size). Similarity scores per Episode: 3 per
+    shared cause code, 1 per shared message name, 2 for the same procedure;
+    Episodes scoring below 2 are not relevant. Most relevant first, top 3.
+    """
+    episodes = store.load()
+    if not episodes:
+        return ""
+    procedure = incident.get("procedure")
+    names = set()
+    causes = set()
+    for msg in (flow or {}).get("messages") or []:
+        for key in ("nas_inner", "nas", "ngap"):
+            if msg.get(key):
+                names.add(msg[key])
+        cause = (msg.get("nas_cause") or {}).get("code")
+        if cause:
+            causes.add(cause)
+    scored = []
+    for ep in episodes:
+        cited = ep.cited_evidence
+        shared_causes = {ev.cause for ev in cited
+                         if ev.cause is not None} & causes
+        shared_names = {ev.message for ev in cited} & names
+        same_procedure = procedure is not None and \
+            _procedure_of(ep.incident_type) == procedure
+        score = (3 * len(shared_causes) + len(shared_names)
+                 + (2 if same_procedure else 0))
+        if score >= 2:
+            scored.append((score, ep))
+    if not scored:
+        return ""
+    scored.sort(key=lambda pair: (pair[0], pair[1].created_at), reverse=True)
+    lines = ["Past similar incidents retrieved from episodic memory "
+             f"({len(scored)} of {len(episodes)} Episode(s)):"]
+    for i, (_, ep) in enumerate(scored[:3], 1):
+        cited = "; ".join(
+            ev.message
+            + (f" cause={ev.cause}" if ev.cause is not None else "")
+            for ev in ep.cited_evidence)
+        lines.append(f"[{i}] {ep.incident_type}  {ep.created_at.isoformat()}")
+        lines.append(f"    {ep.narrative}")
+        lines.append(f"    cited: {cited}")
+    return "\n".join(lines)
+
+
+def objective_text(incident: dict, memory: str = "") -> str:
+    """The objective the search runs against, from the Incident description
+    plus (optionally) relevant past Episodes retrieved from memory."""
     lines = [f"Explain why the {incident['procedure']} procedure failed for "
              f"flow {incident['flow_id']} in this decoded 5G capture."]
     if incident.get("shape"):
@@ -168,6 +227,10 @@ def objective_text(incident: dict) -> str:
                      "instead of waiting for a reject that never comes.")
     if incident.get("detail"):
         lines.append(f"Incident detail: {incident['detail']}.")
+    if memory:
+        lines.append(memory)
+        lines.append("These memory entries are context only: cited_evidence "
+                     "must still cite messages decoded in THIS capture.")
     lines.append("Take one action per step. Actions: "
                  '"inspect <handle>" (kpis, flows, flow:<id>, flow:<id>:<i>, '
                  "unassociated[:<i>], n4[:<i>]), \"topology\", "
@@ -432,9 +495,14 @@ def run_lats(capture: DecodedCapture, incident: dict,
     store = store or MemoryStore()
     expand = expand or default_expand()
     evaluate = evaluate or default_evaluate()
+    # Seed the objective with relevant past Episodes (deterministic
+    # retrieval; the LLM may still call the memory tool mid-search).
+    flow = next((f for f in capture.n2.get("flows") or []
+                 if f.get("flow_id") == incident.get("flow_id")), None)
+    memory = memory_context(store, incident, flow)
     tree = Tree(expand, evaluate,
                 execute=lambda action: execute_action(capture, action,
                                                       store, spec_index),
                 C=C, max_depth=max_depth)
-    return tree.run(objective_text(incident), n_branches=n_branches,
-                    max_rollouts=max_rollouts)
+    return tree.run(objective_text(incident, memory=memory),
+                    n_branches=n_branches, max_rollouts=max_rollouts)

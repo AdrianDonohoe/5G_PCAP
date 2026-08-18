@@ -14,8 +14,8 @@ import pytest
 
 from triage.evidence import DecodedCapture
 from triage.memory import MemoryStore
-from triage.search import (Tree, execute_action, objective_text,
-                           parse_action, run_lats)
+from triage.search import (Tree, execute_action, memory_context,
+                           objective_text, parse_action, run_lats)
 
 
 def mini_capture():
@@ -303,9 +303,62 @@ def test_objective_text():
                            "shape": "partial flow (timeout)"})
     assert "PDU Session procedure failed for flow 3" in text
     assert "partial flow (timeout)" in text
+    assert "Past similar incidents" not in text  # no memory: unchanged
     for incident_type in ("auth_failure", "registration_reject",
                           "registration_timeout",
                           "pdu_session_reject_slice",
                           "pdu_session_reject_other",
                           "pdu_session_timeout"):
         assert incident_type in text
+
+
+def test_objective_text_includes_memory_context():
+    text = objective_text({"flow_id": 3, "procedure": "PDU Session"},
+                          memory="Past similar incidents: [1] auth_failure")
+    assert "Past similar incidents" in text
+    assert "context only" in text  # memory is context, not evidence
+
+
+def test_memory_context_ranks_relevant_episodes(tmp_path):
+    store = MemoryStore(tmp_path / "episodes.jsonl")
+    store.add({"incident_type": "auth_failure",
+               "narrative": "synch failure took down a past registration",
+               "cited_evidence": [{"message": "5GMMStatus", "cause": 91,
+                                   "ts": 999.0}]})
+    store.add({"incident_type": "pdu_session_reject_other",
+               "narrative": "unrelated PDU session failure",
+               "cited_evidence": [{"message": "5GSMPDUSessionEstabRequest",
+                                   "cause": 67, "ts": 500.0}]})
+    flow = mini_capture().n2["flows"][0]
+    text = memory_context(store, {"flow_id": 1,
+                                  "procedure": "Registration"}, flow)
+    assert "synch failure took down a past registration" in text
+    assert "unrelated PDU session failure" not in text
+
+
+def test_memory_context_empty_store(tmp_path):
+    flow = mini_capture().n2["flows"][0]
+    assert memory_context(MemoryStore(tmp_path / "none.jsonl"),
+                          {"flow_id": 1, "procedure": "Registration"},
+                          flow) == ""
+
+
+def test_run_lats_seeds_objective_with_memory(tmp_path):
+    store = MemoryStore(tmp_path / "episodes.jsonl")
+    store.add({"incident_type": "auth_failure",
+               "narrative": "a past registration died the same way",
+               "cited_evidence": [{"message": "5GMMStatus", "cause": 91,
+                                   "ts": 999.0}]})
+    seen = []
+
+    def capture_objective(objective, trajectory, n):
+        seen.append(objective)
+        return ["inspect flows"]
+
+    run_lats(mini_capture(),
+             {"flow_id": 1, "procedure": "registration"},
+             store=store, expand=capture_objective, evaluate=eval_stub,
+             max_rollouts=1)
+    assert any("Past similar incidents" in objective for objective in seen)
+    assert any("a past registration died the same way" in objective
+               for objective in seen)

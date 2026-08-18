@@ -232,7 +232,7 @@
       "width": 150,
       "height": 48,
       "label": "episodes.jsonl",
-      "sublabel": "new Episode written",
+      "sublabel": "new Episode written \u00b7 seeds future searches",
       "fill": "#3f2a00",
       "stroke": "#f59e0b",
       "line_stroke": "#fcd34d"
@@ -442,6 +442,14 @@
       "source_port": "right",
       "target_port": "left",
       "flow": "control"
+    },
+    {
+      "id": "e21",
+      "source": "memory",
+      "target": "expand1",
+      "source_port": "left",
+      "target_port": "left",
+      "flow": "feedback"
     }
   ],
   "composition": {

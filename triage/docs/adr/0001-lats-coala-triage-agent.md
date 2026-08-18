@@ -39,6 +39,16 @@ would let an unfinished, unscored Trajectory pollute memory; CoALA's own
 framing treats memory consolidation as reflection on a *concluded* episode,
 not a reasoning step.
 
+**Amendment: automatic memory retrieval** — beyond the on-demand `memory`
+tool, every search now retrieves relevant past Episodes deterministically
+and seeds the objective with them: each stored Episode scores 3 per shared
+cause code, 1 per shared message name, and 2 for the same procedure; the
+top matches are injected as context (never as evidence — the completeness
+bar still grounds every citation in the current decode). This revises the
+tool-on-demand choice for memory lookup only: a local JSONL read is free
+and deterministic, and relying on the agent to remember the memory tool
+left searches starting cold. Spec/topology lookups remain on-demand.
+
 **Completeness bar** — a Trajectory is `complete` only when its Hypothesis
 cites at least one piece of Evidence from `5gcap`'s decode output. Rejected:
 accepting any plausible-sounding narrative — this is the single mechanism

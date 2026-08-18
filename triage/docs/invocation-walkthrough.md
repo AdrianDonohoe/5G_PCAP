@@ -40,13 +40,36 @@ procedures are `accept`. The CLI prints one line per detected Incident:
 [1/1] flow 1 Registration (explicit reject)
 ```
 
-The Incident becomes the search objective (built in code, not by the LLM):
+The Incident becomes the search objective (built in code, not by the LLM).
+Before the search starts, the agent queries episodic memory for similar
+past incidents (the deterministic retrieval below); this run had an empty
+store, so the objective carried no memory context:
 
 > Explain why the Registration procedure failed for flow 1 in this decoded
 > 5G capture. Failure shape: explicit reject. Incident detail: cause code(s)
 > observed: #21, #111. … Finish with finalize once the evidence supports a
 > root cause; its JSON must have incident_type (one of auth_failure,
 > registration_reject, …), narrative, and cited_evidence.
+
+### Memory retrieval (code)
+
+Every search is seeded from episodic memory, deterministically: each stored
+Episode scores 3 per shared cause code, 1 per shared message name, and 2
+for the same procedure; Episodes scoring below 2 are not relevant, and the
+top 3 are injected into the objective as context — never as evidence, since
+`cited_evidence` must still cite messages decoded in *this* capture. A
+second run on the same capture, after the first had consolidated its
+Episode, received this objective:
+
+> Past similar incidents retrieved from episodic memory (1 of 1 Episode(s)):
+> [1] auth_failure  2026-08-18T09:07:11.739276+00:00
+>     Authentication failed due to key synchronization failure, leading to a
+>     protocol error reject.
+>     cited: 5GMMAuthenticationFailure cause=21; 5GMMRegistrationReject cause=111
+> These memory entries are context only: cited_evidence must still cite
+> messages decoded in THIS capture.
+
+The `memory` tool remains available for targeted lookups mid-search.
 
 ## Stage 2 — LATS search
 
@@ -178,7 +201,8 @@ verdict:
 | Decision | Made by | Notes |
 | --- | --- | --- |
 | Which flows are Incidents | code | fixed wire-shape signatures |
-| The objective text | code | built from the Incident |
+| Which past incidents seed the objective | code | deterministic retrieval: shared causes/message names/procedure; top 3 as context |
+| The objective text | code | built from the Incident + retrieved memory |
 | Which actions to propose (`expand`) | LLM | gpt-oss:120b; free-form, 1–n per line |
 | What an action *means* (`execute`) | code | deterministic tool dispatch; unknown actions rejected |
 | How good a trajectory is (`evaluate`) | LLM | reward/status/reflection — advisory only |
@@ -202,7 +226,9 @@ search on its own.
 - Stage 2 (full tree) and Stage 3 (CLI output) are two separate real runs of
   the same capture on the same code path; both landed `auth_failure` with
   reward 1.0, so the two finalize narratives differ slightly in wording, as
-  quoted. The Stage 4 verdict is for the Stage 3 hypothesis.
+  quoted. The Stage 4 verdict is for the Stage 3 hypothesis. The
+  memory-seeded objective quoted in Stage 1 is from a third run on the same
+  capture after the store had been consolidated.
 - The diagram was generated with
   [fireworks-tech-graph](https://github.com/yizhiyanhua-ai/fireworks-tech-graph)
   (style 2, `standard` composition profile). Re-render it with:

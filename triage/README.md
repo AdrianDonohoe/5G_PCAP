@@ -67,7 +67,10 @@ embedding index over the corpus, built on first use and cached — the first
 build embeds ~3500 chunks and takes ~15-30 min of CPU on this VM; afterwards
 every run loads it from cache), episodic memory (`query_episodic_memory`
 over the local JSON store — the Episode schema is the Pydantic model the
-LATS search will reuse for Hypothesis validation), and
+LATS search reuses for Hypothesis validation; every search objective is
+also seeded with relevant past Episodes: deterministic retrieval scores
+stored incidents by shared cause codes, message names, and procedure, and
+injects the top matches as context, not evidence), and
 `inspect_decoded_evidence` (deterministic Evidence handles over 5gcap's
 --json exports: `kpis` / `flows` / `flow:<id>[:<i>]` / `unassociated[:<i>]`
 / `n4[:<i>]`, degrading to honest "no such evidence" observations on bad

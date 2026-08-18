@@ -121,7 +121,16 @@ def _decode_connection(conn: frozenset,
     responses: dict[int, SbiMsg] = {}
     bodies: dict[tuple[int, str], bytearray] = {}
     msgs: list[SbiMsg] = []
-    for ep, entries in directions.items():
+    # The client's direction must be fed first, however the pcap ordered the
+    # packets: the response side is a client-side conn whose streams only
+    # exist once each observed request has been replayed onto it, and a
+    # server HEADERS for an unreplayed stream raises "Invalid stream ID".
+    # The server direction may be absent entirely (capture ended first).
+    ordered = [(client, directions[client])]
+    server = next((ep for ep in directions if ep != client), None)
+    if server is not None:
+        ordered.append((server, directions[server]))
+    for ep, entries in ordered:
         is_request = ep == client
         conn_obj = req_conn if is_request else rsp_conn
         for ts, payload in entries:

@@ -30,11 +30,11 @@
 #                             (DNN seeded in UDM only, absent from SMF)
 #   pdu_session_timeout       blackhole SMF SBI    -> sm-context creates hang
 #                                                    ~11s then 5GMM #90
-#   sbi_udm_timeout           pause sandbox_udm    -> Nudm_* requests left
+#   sbi_udm_timeout           blackhole UDM SBI    -> Nudm_* requests left
 #                                                    unanswered (SBI timeout)
 #   sbi_nssf_reject           SMF profile dropped  -> Nnssf_NSSelection 403,
-#                             + SMF paused + no    then 5GMM STATUS #403
-#                             NSI in nssf.yaml
+#                             + SMF paused + NSI   then 5GMM STATUS #147
+#                             retargeted (sst 1->2)
 #
 # See ../docs/adr/0002-open5gs-ueransim-sandbox.md and
 # ../triage/docs/adr/0002-triage-v1-implementation-choices.md.
@@ -75,6 +75,7 @@ PAUSED=""
 UDM_SEEDED=""
 SMF_BLACKHOLED=""
 SMF_PAUSED=""
+UDM_BLACKHOLED=""
 NSSF_MODIFIED=""
 
 cleanup() {
@@ -86,6 +87,10 @@ cleanup() {
   [[ -n "$PAUSED" ]] && docker unpause "$PAUSED" 2>/dev/null
   if [[ -n "$SMF_BLACKHOLED" ]]; then
     docker exec sandbox_smf iptables -D INPUT -p tcp --dport 7777 -j DROP \
+      2>/dev/null
+  fi
+  if [[ -n "$UDM_BLACKHOLED" ]]; then
+    docker exec sandbox_udm iptables -D INPUT -p tcp --dport 7777 -j DROP \
       2>/dev/null
   fi
   if [[ -n "$SMF_PAUSED" ]]; then
@@ -298,42 +303,54 @@ elif [[ "$SCENARIO" == "pdu_session_timeout" ]]; then
   echo "Capture window done (PDU session timeout is the expected outcome)."
 elif [[ "$SCENARIO" == "sbi_udm_timeout" ]]; then
   # Registration reaches the UDM through the AUSF (Nudm_UEAuthentication);
-  # freezing the UDM leaves every Nudm_* request unanswered, and the UE
-  # re-attempts registration on its own timers -- the SBI plane's "left
-  # open" signature. (The gNB comes up first so the capture holds its SCTP
-  # association carrying the registration traffic.)
+  # blackholing the UDM's SBI port from inside its netns (the same trick as
+  # the SMF blackhole above, NET_ADMIN on the udm service) leaves every
+  # Nudm_* request unanswered until the AMF's SBI deadline, then
+  # registration fails -- the SBI plane's "left open" signature. Pausing
+  # the UDM container does NOT work: the AUSF fails fast on the broken
+  # connection and the AMF rejects instantly (2-3 ms), no hang. (The gNB
+  # comes up first so the capture holds its SCTP association carrying the
+  # registration traffic.)
   echo "Starting gNB..."
   (cd "$RAN_DIR" && docker compose up -d --force-recreate gnb)
   sleep 8
-  echo "Pausing sandbox_udm (registration will never complete)..."
-  docker pause sandbox_udm
-  PAUSED=sandbox_udm
+  echo "Blackholing the UDM's SBI port (Nudm_* requests will hang)..."
+  docker exec sandbox_udm iptables -A INPUT -p tcp --dport 7777 -j DROP
+  UDM_BLACKHOLED=1
   (cd "$RAN_DIR" && docker compose up -d --force-recreate ue1)
   sleep "$TIMEOUT_SCENARIO_SECS"
   echo "Capture window done (SBI timeout is the expected outcome)."
 elif [[ "$SCENARIO" == "sbi_nssf_reject" ]]; then
   # The compound injection (source-verified against Open5GS v2.8.0): the
-  # AMF only consults the NSSF when NRF SMF discovery comes back empty.
-  # Deleting the SMF's NF profile empties discovery; pausing the SMF keeps
-  # it from heartbeat-re-registering; and with the nsi: block removed from
-  # nssf.yaml the NSSF can answer NSSelection only with 403 "Cannot find
-  # NSI by S-NSSAI[SST:1 SD:0x0]". The AMF turns that into 5GMM STATUS
-  # #403 to the UE. Registration itself never touches the SMF or NSSF, so
-  # it completes normally before the PDU session request fails.
+  # AMF only consults the NSSF when its SMF cache is empty -- a cache fed
+  # by NRF nf-status-notify subscriptions, not by /nnrf-disc/ discovery
+  # calls (none appear on the wire). Deleting the SMF's NF profile empties
+  # it; pausing the SMF keeps it from heartbeat-re-registering; and with
+  # the only NSI retargeted to SST 2 the NSSF can answer NSSelection only
+  # with 403 "Cannot find NSI by S-NSSAI[SST:1 SD:0xffffff]". (Removing
+  # the nsi: entry does not work: the NSSF aborts at boot with
+  # "No nssf.nsi", and it needs at least one NSI entry to initialize --
+  # so the entry stays, pointed at a slice nobody requests.)
+  # The AMF turns the 403 into 5GMM STATUS carrying cause 147, not 403:
+  # nnssf-handler.c passes the raw HTTP status through
+  # nas_5gs_send_gmm_status(), whose parameter is
+  # uint8_t ogs_nas_5gmm_cause_t, truncating 0x0193 to 0x93 on the wire.
+  # Registration itself never touches the SMF or NSSF, so it completes
+  # normally before the PDU session request fails.
   echo "Dropping the SMF NF profile and pausing the SMF..."
   (cd "$CORE_DIR" && docker compose exec -T nrf mongosh "$DB_URI" --quiet \
     --eval 'db.nf_profiles.deleteMany({nfType:"SMF"})' >/dev/null)
   docker pause sandbox_smf
   PAUSED=sandbox_smf
   SMF_PAUSED=1
-  echo "Removing the nsi: block from nssf.yaml and restarting the NSSF..."
+  echo "Retargeting the NSI to SST 2 in nssf.yaml and restarting the NSSF..."
   cp "$NSSF_YAML" "$NSSF_YAML_BAK"
-  sed -i '/^        nsi:/,$d' "$NSSF_YAML"
+  sed -i 's/^              sst: 1$/              sst: 2/' "$NSSF_YAML"
   NSSF_MODIFIED=1
   restart_nssf_fresh
   (cd "$RAN_DIR" && docker compose up -d --force-recreate gnb ue1)
   sleep "$TIMEOUT_SCENARIO_SECS"
-  echo "Capture window done (NSSF 403 -> 5GMM STATUS #403 is the expected outcome)."
+  echo "Capture window done (NSSF 403 -> 5GMM STATUS #147 is the expected outcome)."
 else
   echo "Starting ephemeral RAN (gNB + ${#UE_SERVICES[@]} UEs)..."
   (cd "$RAN_DIR" && docker compose up -d --force-recreate)
@@ -387,5 +404,5 @@ fi
 echo "Wrote:"
 echo "  $N2_OUT"
 [[ -n "${N4_OUT:-}" ]] && echo "  $N4_OUT"
-echo "  $SBI_OUT"
 [[ -n "$SCENARIO" ]] && echo "  $FIXTURES_DIR/$SCENARIO.label.json"
+echo "  $SBI_OUT"

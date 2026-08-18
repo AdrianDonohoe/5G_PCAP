@@ -172,18 +172,33 @@ def test_sbi_udm_timeout():
     label = json.loads((FIXTURES / "sbi_udm_timeout.label.json").read_text())
     assert label == {"incident_type": "sbi_udm_timeout",
                      "scenario": "sbi_udm_timeout"}
-    # The paused UDM freezes AUSF's Nudm_UEAuthentication first; ANY
+    # The blackholed UDM freezes AUSF's Nudm_UEAuthentication first; ANY
     # unanswered SBI request is the incident, so assert on timeouts rather
     # than a specific service name.
     procedures, unpaired = _sbi_procedures("sbi_udm_timeout")
     timeouts = [p for p in procedures if p.outcome == "timeout"]
-    assert timeouts, "the paused UDM must leave SBI requests unanswered"
+    assert timeouts, "the blackholed UDM must leave SBI requests unanswered"
     assert unpaired >= 1
-    # N2: the AMF can't obtain auth vectors, so registration never completes.
+    # N2: the AMF can't obtain auth vectors, so after Open5GS's hardcoded
+    # ~10s SBI deadline it rejects the registration with 5GMM cause #90
+    # ("Payload was not forwarded" -- the AMF's gmm_cause_from_sbi(504)
+    # mapping of the AUSF's gateway-timeout answer). The ~10s delay is the
+    # incident's signature on N2; a later attempt may still be hanging when
+    # the capture window ends, which is fine (the missing terminal message
+    # is the expected outcome of a timeout scenario).
     flows = _flows("sbi_udm_timeout")
     assert flows, "registration attempts must reach the AMF"
-    assert all(not f.procedures for f in flows), \
-        "no terminal outcome: the hung UDM keeps the AMF silent"
+    delayed = []
+    for f in flows:
+        req = min((m.ts for m, nas in f.messages
+                   if nas and nas.name == "5GMMRegistrationRequest"),
+                  default=None)
+        rej = [m.ts for m, nas in f.messages if nas and nas.cause == 90]
+        if req is not None and rej:
+            delayed.append(min(rej) - req)
+    assert delayed, "the hung auth chain must end in a registration reject #90"
+    assert all(d > 5.0 for d in delayed), \
+        "the reject must arrive after the SBI deadline, not instantly"
 
 
 @pytest.mark.skipif(
@@ -193,20 +208,29 @@ def test_sbi_nssf_reject():
     label = json.loads((FIXTURES / "sbi_nssf_reject.label.json").read_text())
     assert label == {"incident_type": "sbi_nssf_reject",
                      "scenario": "sbi_nssf_reject"}
-    # SBI: the NSSF answers the NSSelection consult with 403 (source-verified
-    # Open5GS v2.8.0: "Cannot find NSI by S-NSSAI[SST:1 SD:0x0]"; the exact
-    # ProblemDetails title gets pinned after the live run).
+    # SBI: with the SMF profile deleted from the NRF, the AMF's
+    # NRF-subscription-fed SMF cache is empty and it consults the NSSF,
+    # which answers 403 "Cannot find NSI by S-NSSAI[SST:1 SD:0xffffff]"
+    # (source-verified Open5GS v2.8.0, pinned from the live run).
     procedures, _ = _sbi_procedures("sbi_nssf_reject")
     rejects = [p for p in procedures
                if p.kind == "Nnssf_NSSelection" and p.outcome == "reject"]
     assert rejects, "the NSSF must reject the NSSelection consult"
     assert rejects[0].status == 403
-    # N2: registration completes (no SMF involved); the PDU session consult
-    # is bounced back as 5GMM STATUS #403.
+    # N2: registration completes (no SMF involved); each PDU session consult
+    # is bounced back as 5GMM STATUS. The STATUS cause IE is 147, not 403:
+    # Open5GS passes the raw HTTP status straight into
+    # nas_5gs_send_gmm_status(amf_ue, res_status) (src/amf/nnssf-handler.c)
+    # whose parameter is uint8_t ogs_nas_5gmm_cause_t, so 403 (0x0193)
+    # truncates to 0x93 = 147 on the wire (inner NAS "7e 00 64 93"). The 403
+    # lives on the SBI plane, asserted above; 147 is not a defined 5GMM
+    # cause (pycrate leaves its name None) -- it is the truncation artifact
+    # itself.
     flows = _flows("sbi_nssf_reject")
     assert len(flows) == 1  # gnb+ue1 only
     f = flows[0]
     reg = [p for p in f.procedures if p.kind == "registration"]
     assert reg and reg[0].outcome == "accept"
-    assert 403 in _causes(f), "the AMF must bounce the PDU request with #403"
+    assert _causes(f) == [147, 147, 147], \
+        "each PDU session consult must bounce as 5GMM STATUS with cause 147"
     assert any(nas.inner == "5GMMStatus" for _, nas in f.messages if nas)

@@ -18,7 +18,7 @@ accepted
 
 **Decode** — new 5gcap SBI decoder vs. leaving SBI out of scope. The
 capture→decode→triage→report→eval loop earns its third plane because the
-two new scenarios *are* SBI failures: a paused UDM and an NSSF 403 are
+two new scenarios *are* SBI failures: a blackholed UDM and an NSSF 403 are
 invisible on N2 alone, and the existing six scenarios gain visibility
 evidence from unconditional SBI capture. Chose the full loop, mirroring
 N2/N4.
@@ -83,28 +83,48 @@ once it exists (gated on the sandbox captures).
 
 ## The two scenario mechanics
 
-**`sbi_udm_timeout`** — the registration_timeout pattern verbatim with
-`docker pause sandbox_udm`: gNB up, pause UDM, UE registers. Registration
-reaches the UDM through the AUSF, so every Nudm_* request hangs; the UE
-re-attempts on its own timers, so the capture holds repeated unanswered
-requests. Detection accepts ANY unanswered SBI request — it must not
-require a specific service.
+**`sbi_udm_timeout`** — gNB up, blackhole the UDM's SBI port from inside
+its netns (the `pdu_session_timeout` trick: an INPUT DROP on 7777, with
+NET_ADMIN on the udm service), UE registers. Registration reaches the UDM
+through the AUSF, so the auth chain hangs until the AMF's SBI deadline
+(~10 s) and the capture holds the unanswered request. Pausing the UDM
+container does NOT work: the AUSF fails fast on the broken connection and
+the AMF rejects in 2-3 ms — no hang. The observable timeout is the AMF's
+Nausf_UEAuthentication request (the AUSF→UDM hop never emits frames on
+the blackholed port); detection accepts ANY unanswered SBI request — it
+must not require a specific service. The fixture also carries two
+Nausf_UEAuthentication 504s (the AUSF's gateway-timeout answers), the
+same story as explicit rejects. On N2 the AMF rejects the registration
+with 5GMM cause #90 ("Payload was not forwarded" — its
+`gmm_cause_from_sbi(504)` mapping) exactly at the deadline (10.0 s
+request-to-reject, live-verified); the UE retries and a later attempt is
+still hanging when the capture window ends.
 
 **`sbi_nssf_reject`** — a compound injection, because no single knob in
 Open5GS produces a wire-visible NSSF reject: the AMF consults the NSSF
-only when NRF SMF discovery comes back empty (source-verified against
-Open5GS v2.8.0), so all three legs are needed:
+only when its SMF cache is empty (source-verified against Open5GS
+v2.8.0). The cache is fed by NRF nf-status-notify subscriptions, not by
+`/nnrf-disc/` discovery calls — none appear on the wire — so all three
+legs are needed:
 
-1. `db.nf_profiles.deleteMany({nfType:"SMF"})` — empties SMF discovery.
+1. `db.nf_profiles.deleteMany({nfType:"SMF"})` — empties the cache via
+   the NRF subscription.
 2. `docker pause sandbox_smf` — keeps the SMF from
    heartbeat-re-registering its profile mid-capture.
-3. Remove the `nsi:` block from `nssf.yaml` + restart the NSSF — with no
-   NSI configured, NSSelection answers 403 "Cannot find NSI by
-   S-NSSAI[SST:1 SD:0x0]".
+3. Retarget the NSI in `nssf.yaml` to a slice nobody requests
+   (`sst: 1` → `sst: 2`) + restart the NSSF — with no NSI mapping
+   S-NSSAI 1, NSSelection answers 403 "Cannot find NSI by
+   S-NSSAI[SST:1 SD:0xffffff]". Removing the `nsi:` entry does NOT work:
+   the NSSF aborts at boot with "No nssf.nsi", and it requires at least
+   one NSI entry to initialize.
 
-Expected wire signature: PDU session → Nnrf discovery 200 empty →
-Nnssf_NSSelection GET 403 → AMF → **5GMM STATUS #403** to the UE (NOT
-registration reject #62). Live-verified on the first sandbox run; if
+Expected wire signature: registration accept → PDU session →
+Nnssf_NSSelection GET 403 (one per slice-consult, ×2 per UE attempt) →
+AMF → **5GMM STATUS with cause 147** to the UE (NOT registration reject
+#62). The cause is 147, not 403: `nnssf-handler.c` passes the raw HTTP
+status through `nas_5gs_send_gmm_status()`, whose parameter is
+`uint8_t ogs_nas_5gmm_cause_t`, truncating 0x0193 to 0x93 on the wire
+(inner NAS `7e 00 64 93`). Live-verified on the first sandbox run; if
 versions drift, adjust fixture asserts, not the scenario. Cleanup:
 unpause + restart the SMF (re-registers with the NRF), restore nssf.yaml +
 restart the NSSF.

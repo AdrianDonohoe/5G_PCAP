@@ -61,8 +61,8 @@ harness:
 | `pdu_session_reject_slice` | UE1 second session on SST 2 | SST 1 session accepts; 5GMM STATUS #91 on SST 2 |
 | `pdu_session_reject_other` | UE1 APN `otherdnn` (UDM-only DNN) | 5GSM REJECT, cause #67 |
 | `pdu_session_timeout` | blackhole SMF SBI port (in-netns iptables) | sm-context create hangs ~11 s, then 5GMM #90, UE retries |
-| `sbi_udm_timeout` | `docker pause sandbox_udm` | ≥1 unanswered Nudm_* request (AUSF→UDM auth hangs first); N2 registration never completes |
-| `sbi_nssf_reject` | SMF profile deleted from NRF + SMF paused + `nsi:` stripped from NSSF config | Nnssf_NSSelection 403, then 5GMM STATUS #403 to the UE |
+| `sbi_udm_timeout` | blackhole UDM SBI port (in-netns iptables) | ≥1 unanswered Nudm_* request (AUSF→UDM auth hangs); N2 registration fails after the AMF's SBI deadline |
+| `sbi_nssf_reject` | SMF profile deleted from NRF + SMF paused + NSI retargeted to SST 2 in NSSF config | Nnssf_NSSelection 403, then 5GMM STATUS #147 to the UE |
 
 Two shapes differ from the 3GPP textbook on purpose, because they are what
 Open5GS actually emits (verified in the generated fixtures): `auth_failure`
@@ -76,9 +76,13 @@ is why the scenario blackholes the SMF's SBI port from inside its own netns
 instead — heartbeats keep flowing, data-path requests time out. The
 `sbi_nssf_reject` injection is compound for the same reason: deleting the SMF
 NF profile alone fails (its heartbeats re-register it), so the SMF is paused
-too, and the NSSF's `nsi:` block is stripped — with no SMF discoverable and no
-NSI mapping S-NSSAI 1, the NSSF answers Nnssf_NSSelection 403 and the AMF
-relays it as 5GMM STATUS #403.
+too, and the NSSF's only NSI is retargeted to SST 2 (the NSSF refuses to boot
+without at least one NSI entry — "No nssf.nsi") — with no SMF in the AMF's
+NRF-subscription-fed cache and no NSI mapping S-NSSAI 1, the NSSF answers
+Nnssf_NSSelection 403 and the AMF relays it as 5GMM STATUS carrying cause
+147: Open5GS passes the raw HTTP status through a `uint8_t` 5GMM-cause
+parameter (`nnssf-handler.c` → `nas_5gs_send_gmm_status()`), truncating
+0x0193 to 0x93 on the wire.
 
 Timeout scenarios start only `gnb`+`ue1`, capture a fixed ~45 s window, and
 exit 0 — the missing terminal message *is* the expected outcome. All scenario

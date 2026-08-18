@@ -91,6 +91,10 @@ services:
     volumes:
       - ./udm:/mnt/udm
       - ./log:/open5gs/install/var/log/open5gs
+    # NET_ADMIN lets capture.sh blackhole AUSF->UDM SBI traffic from inside
+    # the UDM netns for the sbi_udm_timeout injection (see sandbox/capture.sh).
+    cap_add:
+      - NET_ADMIN
     networks:
       sandbox_core:
         ipv4_address: ${UDM_IP}

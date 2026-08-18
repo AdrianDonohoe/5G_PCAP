@@ -166,6 +166,21 @@ def test_retransmission_dropped(tmp_path):
     assert pair_procedures(msgs)[0][0].outcome == "accept"
 
 
+def test_server_first_packet_order_decodes(tmp_path):
+    # The bridge can deliver the server's SETTINGS before the client's
+    # preface segment (tcpdump packet order, not wire causality); decode
+    # must not depend on it. Feeding the server bytes to a client-side conn
+    # whose streams were never replayed used to raise "Invalid stream ID".
+    c2s, s2c = _exchange(_headers("/nudm-sdm/v1/x"), status=200)
+    wrpcap(str(tmp_path / "x.pcap"),
+           [_segment(SERVER, SBI_PORT, CLIENT, 40000, s2c),
+            _segment(CLIENT, 40000, SERVER, SBI_PORT, c2s)])
+    msgs = read_sbi_capture(str(tmp_path / "x.pcap"))
+    rsp = next(m for m in msgs if m.direction == "response")
+    assert rsp.status == 200 and rsp.name == "Nudm_SDM"
+    assert pair_procedures(msgs)[0][0].outcome == "accept"
+
+
 def test_non_7777_tcp_ignored(tmp_path):
     c2s, s2c = _exchange(_headers("/nudm-sdm/v1/x"), status=200)
     wrpcap(str(tmp_path / "x.pcap"),

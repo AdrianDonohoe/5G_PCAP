@@ -12,12 +12,13 @@
 #
 # With --scenario <name>, a failure-injection scenario is applied to UE1
 # only (UE2/UE3 stay untouched as golden flows in the same capture) and the
-# output is <name>.pcap plus <name>_sbi.pcap (every scenario captures SBI)
-# and a sibling <name>.label.json = {incident_type, scenario}, supplying
-# ground truth for the triage eval harness. A scenario is a UE1-config
-# override plus optional UDM seed variant (pre-hook) and optional docker
-# pause (timeout shapes), or a core-side injection (the sbi_* pair), and
-# maps one-to-one onto the eight incident_types in ../triage/CONTEXT.md:
+# output is <name>.pcap plus <name>_n4.pcap and <name>_sbi.pcap (every
+# scenario captures N4 and SBI) and a sibling <name>.label.json =
+# {incident_type, scenario}, supplying ground truth for the triage eval
+# harness. A scenario is a UE1-config override plus optional UDM seed
+# variant (pre-hook) and optional docker pause (timeout shapes), or a
+# core-side injection (the sbi_* pair and n4_upf_timeout), and maps
+# one-to-one onto the nine incident_types in ../triage/CONTEXT.md:
 #
 #   auth_failure              wrong Ki on UE1      -> SYNCH FAILURE #21, then
 #                                                    REGISTRATION REJECT #111
@@ -35,6 +36,9 @@
 #   sbi_nssf_reject           SMF profile dropped  -> Nnssf_NSSelection 403,
 #                             + SMF paused + NSI   then 5GMM STATUS #147
 #                             retargeted (sst 1->2)
+#   n4_upf_timeout            blackhole UPF PFCP   -> session establishment
+#                             port (udp/8805)      requests left unanswered,
+#                                                  then 5GSM REJECT #38
 #
 # See ../docs/adr/0002-open5gs-ueransim-sandbox.md and
 # ../triage/docs/adr/0002-triage-v1-implementation-choices.md.
@@ -56,11 +60,11 @@ SCENARIO=""
 if [[ $# -eq 2 && "$1" == "--scenario" ]]; then
   SCENARIO="$2"
 elif [[ $# -gt 0 ]]; then
-  echo "Usage: $0 [--scenario auth_failure|registration_reject|registration_timeout|pdu_session_reject_slice|pdu_session_reject_other|pdu_session_timeout|sbi_udm_timeout|sbi_nssf_reject]" >&2
+  echo "Usage: $0 [--scenario auth_failure|registration_reject|registration_timeout|pdu_session_reject_slice|pdu_session_reject_other|pdu_session_timeout|sbi_udm_timeout|sbi_nssf_reject|n4_upf_timeout]" >&2
   exit 2
 fi
 case "$SCENARIO" in
-  ""|auth_failure|registration_reject|registration_timeout|pdu_session_reject_slice|pdu_session_reject_other|pdu_session_timeout|sbi_udm_timeout|sbi_nssf_reject) ;;
+  ""|auth_failure|registration_reject|registration_timeout|pdu_session_reject_slice|pdu_session_reject_other|pdu_session_timeout|sbi_udm_timeout|sbi_nssf_reject|n4_upf_timeout) ;;
   *)
     echo "Error: unknown scenario '$SCENARIO'" >&2
     exit 2 ;;
@@ -76,6 +80,7 @@ UDM_SEEDED=""
 SMF_BLACKHOLED=""
 SMF_PAUSED=""
 UDM_BLACKHOLED=""
+UPF_BLACKHOLED=""
 NSSF_MODIFIED=""
 
 cleanup() {
@@ -91,6 +96,10 @@ cleanup() {
   fi
   if [[ -n "$UDM_BLACKHOLED" ]]; then
     docker exec sandbox_udm iptables -D INPUT -p tcp --dport 7777 -j DROP \
+      2>/dev/null
+  fi
+  if [[ -n "$UPF_BLACKHOLED" ]]; then
+    docker exec sandbox_upf iptables -D INPUT -p udp --dport 8805 -j DROP \
       2>/dev/null
   fi
   if [[ -n "$SMF_PAUSED" ]]; then
@@ -238,6 +247,7 @@ PY
 
 if [[ -n "$SCENARIO" ]]; then
   N2_OUT="$FIXTURES_DIR/$SCENARIO.pcap"
+  N4_OUT="$FIXTURES_DIR/${SCENARIO}_n4.pcap"
   SBI_OUT="$FIXTURES_DIR/${SCENARIO}_sbi.pcap"
 else
   N2_OUT="$FIXTURES_DIR/sandbox_n2.pcap"
@@ -251,13 +261,12 @@ BRIDGE="br-${NET_ID:0:12}"
 echo "Capturing N2 (SCTP/38412) on $BRIDGE..."
 tcpdump -i "$BRIDGE" -w "$N2_OUT" 'sctp port 38412' &
 N2_PID=$!
-if [[ -n "${N4_OUT:-}" ]]; then
-  tcpdump -i "$BRIDGE" -w "$N4_OUT" 'udp port 8805' &
-  N4_PID=$!
-fi
-# SBI is captured on every run: scenario labels live on the N2 plane today,
-# but the 7777 traffic is the ground-truth evidence the sbi_* fixtures are
-# judged against (and a visibility bonus on the six N2 scenarios).
+# N4 and SBI are captured on every run: scenario labels live on the N2
+# plane today, but the 8805/7777 traffic is the ground-truth evidence the
+# n4_*/sbi_* fixtures are judged against (and a visibility bonus on the N2
+# scenarios).
+tcpdump -i "$BRIDGE" -w "$N4_OUT" 'udp port 8805' &
+N4_PID=$!
 tcpdump -i "$BRIDGE" -w "$SBI_OUT" 'tcp port 7777' &
 SBI_PID=$!
 sleep 3  # let tcpdump attach to the bridge before any RAN traffic starts
@@ -351,6 +360,23 @@ elif [[ "$SCENARIO" == "sbi_nssf_reject" ]]; then
   (cd "$RAN_DIR" && docker compose up -d --force-recreate gnb ue1)
   sleep "$TIMEOUT_SCENARIO_SECS"
   echo "Capture window done (NSSF 403 -> 5GMM STATUS #147 is the expected outcome)."
+elif [[ "$SCENARIO" == "n4_upf_timeout" ]]; then
+  # Blackholing the UPF's PFCP port (8805/udp) from inside its netns (the
+  # upf service already runs privileged with NET_ADMIN -- see
+  # core/docker-compose.yml) leaves every SMF Session Establishment Request
+  # unanswered: Open5GS retransmits 3 times at 2.5 s intervals (t1 =
+  # 10 s / 4) and gives up ~10 s later, then the AMF answers the UE with
+  # PDU SESSION ESTABLISHMENT REJECT, 5GSM cause #38 (Network failure) --
+  # NOT 5GMM #90, which is pdu_session_timeout's AMF SBI deadline
+  # signature. The UPF's SBI heartbeats keep flowing, so the NRF never
+  # purges it; only the PFCP data path is dead (association setup retries
+  # start after the first missed heartbeat at ~11 s).
+  echo "Blackholing the UPF PFCP port (session establishment will time out)..."
+  docker exec sandbox_upf iptables -A INPUT -p udp --dport 8805 -j DROP
+  UPF_BLACKHOLED=1
+  (cd "$RAN_DIR" && docker compose up -d --force-recreate gnb ue1)
+  sleep "$TIMEOUT_SCENARIO_SECS"
+  echo "Capture window done (N4 timeout is the expected outcome)."
 else
   echo "Starting ephemeral RAN (gNB + ${#UE_SERVICES[@]} UEs)..."
   (cd "$RAN_DIR" && docker compose up -d --force-recreate)
@@ -386,8 +412,8 @@ else
 fi
 
 # Teardown must never abort the script: `wait` returns 143 for a SIGTERMed
-# tcpdump, and N4_PID is unset on scenario runs (an empty argument to
-# kill/wait fails under `set -e` before the label block can run).
+# tcpdump, and an empty argument to kill/wait fails under `set -e` before
+# the label block can run.
 kill "$N2_PID" 2>/dev/null || true
 [[ -n "${N4_PID:-}" ]] && kill "$N4_PID" 2>/dev/null || true
 [[ -n "${SBI_PID:-}" ]] && kill "$SBI_PID" 2>/dev/null || true

@@ -49,9 +49,9 @@ back with a `[PARTIAL]` flow (rare capture-start race).
 ### Failure-injection scenarios
 
 `./capture.sh --scenario <name>` applies a failure to UE1 only (UE2/UE3 stay
-golden in the same capture) and writes `<name>.pcap` and `<name>_sbi.pcap`
-plus a sibling `<name>.label.json` ground-truth label for the triage eval
-harness:
+golden in the same capture) and writes `<name>.pcap`, `<name>_n4.pcap`, and
+`<name>_sbi.pcap` plus a sibling `<name>.label.json` ground-truth label for
+the triage eval harness:
 
 | scenario | injection | expected wire shape |
 |---|---|---|
@@ -63,6 +63,7 @@ harness:
 | `pdu_session_timeout` | blackhole SMF SBI port (in-netns iptables) | sm-context create hangs ~11 s, then 5GMM #90, UE retries |
 | `sbi_udm_timeout` | blackhole UDM SBI port (in-netns iptables) | ≥1 unanswered Nudm_* request (AUSF→UDM auth hangs); N2 registration fails after the AMF's SBI deadline |
 | `sbi_nssf_reject` | SMF profile deleted from NRF + SMF paused + NSI retargeted to SST 2 in NSSF config | Nnssf_NSSelection 403, then 5GMM STATUS #147 to the UE |
+| `n4_upf_timeout` | blackhole UPF PFCP port (udp/8805, in-netns iptables) | 4 unanswered Session Establishment Requests per UE attempt, then 5GSM REJECT #38 |
 
 Two shapes differ from the 3GPP textbook on purpose, because they are what
 Open5GS actually emits (verified in the generated fixtures): `auth_failure`
@@ -83,6 +84,16 @@ Nnssf_NSSelection 403 and the AMF relays it as 5GMM STATUS carrying cause
 147: Open5GS passes the raw HTTP status through a `uint8_t` 5GMM-cause
 parameter (`nnssf-handler.c` → `nas_5gs_send_gmm_status()`), truncating
 0x0193 to 0x93 on the wire.
+
+The `n4_upf_timeout` scenario is the PFCP twin of the SMF blackhole: it
+drops udp/8805 inbound inside the UPF's netns (the upf service already runs
+with NET_ADMIN), so the SMF's Session Establishment Requests go unanswered.
+The SMF retransmits 3× at 2.5 s intervals and gives up ~10 s later; the AMF
+then rejects the PDU session with 5GSM #38 (Network failure) — not 5GMM
+#90, which is the AMF's own SBI deadline in `pdu_session_timeout`. A
+mid-session blackhole is deliberately not a scenario: on a missed heartbeat
+the SMF logs "No UPF available" in a single-UPF core and tears nothing
+down, so no failure shape ever reaches the wire.
 
 Timeout scenarios start only `gnb`+`ue1`, capture a fixed ~45 s window, and
 exit 0 — the missing terminal message *is* the expected outcome. All scenario

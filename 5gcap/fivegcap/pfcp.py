@@ -81,20 +81,26 @@ class N4Procedure:
     start_ts: float
     end_ts: float
     start_msg: str
-    end_msg: str
-    outcome: str  # "accept" / "reject" / "unknown"
+    end_msg: str | None
+    outcome: str  # "accept" / "reject" / "unknown" / "timeout"
+    cause: int | None = None
+    cause_name: str | None = None
 
 
 def pair_procedures(msgs: list[PfcpMsg]) -> tuple[list[N4Procedure], list[PfcpMsg]]:
     """Pairs request/response messages by sequence number. Returns
-    (procedures, unpaired requests)."""
+    (procedures, unpaired requests). A request never answered by capture
+    end is a timeout procedure; retransmissions of a pending request are
+    kept as distinct messages (the retry burst is physical evidence of the
+    timeout) but pair against the first send."""
     pending: dict[int, PfcpMsg] = {}
     procedures: list[N4Procedure] = []
     for m in msgs:
         if m.unparsed or m.msg_type is None:
             continue
         if m.msg_type in REQ_KIND:
-            pending[m.seq] = m
+            if m.seq not in pending:  # retransmit: keep the first send
+                pending[m.seq] = m
         elif (m.msg_type - 1) in REQ_KIND and m.seq in pending:
             req = pending.pop(m.seq)
             outcome = "unknown"
@@ -108,6 +114,20 @@ def pair_procedures(msgs: list[PfcpMsg]) -> tuple[list[N4Procedure], list[PfcpMs
                     start_msg=req.name,
                     end_msg=m.name,
                     outcome=outcome,
+                    cause=m.cause,
+                    cause_name=m.cause_name,
                 )
             )
+    for req in pending.values():
+        procedures.append(
+            N4Procedure(
+                kind=REQ_KIND[req.msg_type],
+                start_ts=req.ts,
+                end_ts=req.ts,
+                start_msg=req.name,
+                end_msg=None,
+                outcome="timeout",
+            )
+        )
+    procedures.sort(key=lambda p: p.start_ts)
     return procedures, list(pending.values())

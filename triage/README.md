@@ -1,7 +1,8 @@
 # triage
 
 LLM-agent root-cause hypothesis generation for failed 5G Registration and
-PDU Session procedures and SBI service transactions. One-shot per failed
+PDU Session procedures, SBI service transactions, and N4
+session-management procedures. One-shot per failed
 Incident, consuming 5gcap's decode output (N2, N4, SBI planes) as its
 evidentiary substrate; evaluated against the sandbox's
 failure-injection fixtures.
@@ -14,7 +15,8 @@ the ADRs ([0001](./docs/adr/0001-lats-coala-triage-agent.md),
 [0002](./docs/adr/0002-triage-v1-implementation-choices.md),
 [0003](./docs/adr/0003-spec-graph-typed-entities-and-hybrid-retrieval.md),
 [0004](./docs/adr/0004-post-incident-report-writer.md),
-[0005](./docs/adr/0005-sbi-plane.md)). One real
+[0005](./docs/adr/0005-sbi-plane.md),
+[0006](./docs/adr/0006-n4-plane.md)). One real
 invocation, decision by decision, is in
 [docs/invocation-walkthrough.md](./docs/invocation-walkthrough.md).
 
@@ -62,9 +64,12 @@ arrived), runs one LATS search per Incident, and prints the hypotheses to
 stdout as a JSON array; progress and memory notes go to stderr. `--flow`
 restricts detection to one flow, `--out` also writes the JSON to a file,
 `--episodes-path` overrides the memory store, and `--verbose` prints each
-winning Trajectory to stderr. With `--sbi`, failed SBI procedures (HTTP
+winning Trajectory to stderr. With `--n4`, failed session-management PFCP
+procedures (a non-accept Cause, or a request never answered) are added as
+their own Incidents — heartbeat/association/node-report traffic is never
+an Incident. With `--sbi`, failed SBI procedures (HTTP
 status >= 400, or a request never answered) are added as their own
-Incidents — they carry no flow_id, and `--flow` filters N2 incidents
+Incidents — both carry no flow_id, and `--flow` filters N2 incidents
 only. Zero Incidents is an empty result with exit
 0; exit 1 means the invocation itself failed (e.g. unset `GROQ_API_KEY`).
 
@@ -109,14 +114,18 @@ produces an Episode that validates AND cites evidence grounded in the
 decode), the SBI plane (5gcap decodes the plaintext HTTP/2 on the NF
 bridge's 7777; triage detects SBI Incidents, grounds SBI evidence on
 service name + ts, and resolves TS 29.5xx service names through the spec
-graph's SBI dialect — ADR-0005), and post-hoc CoALA consolidation
+graph's SBI dialect — ADR-0005), the N4 plane (5gcap's PFCP decoder gains
+a timeout outcome and numeric cause export; triage detects session-set N4
+Incidents and grounds PFCP evidence on message name + ts — ADR-0006), and
+post-hoc CoALA consolidation
 (`consolidate`: records the finalized Episode exactly once — a re-run of
 the same capture dedups), and
 the `triage analyze` CLI (Incident detection over 5gcap's decode output,
 one LATS search per Incident, hypotheses as JSON on stdout), and the
 offline eval harness (`evals/run_eval.py`: type_accuracy and
 diagnosis_quality over the labeled fixtures — the six N2 scenarios plus
-the two sbi_* ones, which join the run once their sandbox pcaps exist —
+the two sbi_* and one n4_upf_timeout ones, which join the run once their
+sandbox pcaps exist —
 with the judge on a model
 distinct from the generator), and the post-incident report writer
 (`triage/report.py`, ADR-0004: deterministic Markdown over a saved run —

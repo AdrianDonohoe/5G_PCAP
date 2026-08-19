@@ -11,9 +11,11 @@ from pathlib import Path
 
 import pytest
 
-from fivegcap.capture import read_capture
+from fivegcap.capture import read_capture, read_pfcp_capture
 from fivegcap.flow import build_flows
 from fivegcap.ngap import decode as ngap_decode
+from fivegcap.pfcp import decode as pfcp_decode
+from fivegcap.pfcp import pair_procedures as pair_pfcp_procedures
 from fivegcap.sbi import read_sbi_capture, pair_procedures
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -234,3 +236,69 @@ def test_sbi_nssf_reject():
     assert _causes(f) == [147, 147, 147], \
         "each PDU session consult must bounce as 5GMM STATUS with cause 147"
     assert any(nas.inner == "5GMMStatus" for _, nas in f.messages if nas)
+
+
+# N4-plane scenario: its pcaps arrive with the sandbox run
+# (sandbox/capture.sh), so this test stays skipped until then. Wire shapes
+# below are the source-verified expectations; tighten after the live run.
+
+def _n4_procedures(scenario):
+    raw = read_pfcp_capture(str(FIXTURES / f"{scenario}_n4.pcap"))
+    msgs = [pfcp_decode(m.ts, m.data, m.src_ip, m.dst_ip, m.src_port,
+                        m.dst_port)
+            for m in raw]
+    procedures, _ = pair_pfcp_procedures(msgs)
+    return procedures, msgs
+
+
+@pytest.mark.skipif(
+    not (FIXTURES / "n4_upf_timeout_n4.pcap").exists(),
+    reason="N4 pcaps arrive with the sandbox run (sandbox/capture.sh)")
+def test_n4_upf_timeout():
+    label = json.loads((FIXTURES / "n4_upf_timeout.label.json").read_text())
+    assert label == {"incident_type": "n4_upf_timeout",
+                     "scenario": "n4_upf_timeout"}
+    # N4: the blackholed UPF never answers the SMF's Session Establishment
+    # Requests. Open5GS retransmits 3 times (t1 = 2.5 s), so each UE
+    # attempt leaves a 4-request burst under one seq -- kept as distinct
+    # messages (the burst is the timeout's physical signature) but pairing
+    # as one unanswered request / one timeout procedure anchored at the
+    # first send. The association setup retries that start after the first
+    # missed heartbeat (~11 s) are maintenance traffic, never incidents.
+    procedures, msgs = _n4_procedures("n4_upf_timeout")
+    timeouts = [p for p in procedures
+                if p.kind == "session_establishment"
+                and p.outcome == "timeout"]
+    assert timeouts, "the blackholed UPF must leave establishment requests unanswered"
+    reqs = [m for m in msgs
+            if m.name == "PFCP Session Establishment Request"]
+    bursts = {}
+    for m in reqs:
+        bursts[m.seq] = bursts.get(m.seq, 0) + 1
+    assert len(bursts) == len(timeouts), \
+        "each timeout procedure must anchor one request seq"
+    assert max(bursts.values()) >= 4, \
+        "at least one attempt must show its full 4-request retransmit burst"
+    assert any(p.kind == "association_setup" and p.outcome == "timeout"
+               for p in procedures), \
+        "the UPF's silence must also strand the association keepalive"
+    # N2: registration completes; the PDU session establishment times out on
+    # N4 and the AMF rejects with 5GSM cause #38 (Network failure) -- the
+    # SMF's own ~10 s give-up, NOT 5GMM #90 (that is pdu_session_timeout's
+    # AMF SBI deadline signature). The request-to-reject gap > 5 s is the
+    # signature; a later UE attempt may still be hanging when the capture
+    # window ends, which is fine (the missing terminal message is the
+    # expected outcome of a timeout scenario).
+    flows = _flows("n4_upf_timeout")
+    assert flows, "the UE's registration must reach the AMF"
+    delayed = []
+    for f in flows:
+        req = min((m.ts for m, nas in f.messages
+                   if nas and nas.inner == "5GSMPDUSessionEstabRequest"),
+                  default=None)
+        rej = [m.ts for m, nas in f.messages if nas and nas.cause == 38]
+        if req is not None and rej:
+            delayed.append(min(rej) - req)
+    assert delayed, "the N4 timeout must end in 5GSM REJECT #38"
+    assert all(d > 5.0 for d in delayed), \
+        "the reject must arrive after the SMF's N4 give-up, not instantly"

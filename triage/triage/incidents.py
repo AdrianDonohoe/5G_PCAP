@@ -1,5 +1,5 @@
 """Incident detection: find failed Registration / PDU Session procedures in
-5gcap's decode output, on both the N2 and SBI planes.
+5gcap's decode output, on the N2, N4, and SBI planes.
 
 CONTEXT.md: an Incident is a single failed Procedure within one Flow — an
 explicit Reject with a cause code, or a Partial Flow whose terminal message
@@ -20,6 +20,14 @@ request/response pair (HTTP status), so an explicit reject is a response
 with status >= 400 and a timeout is a request never answered by capture
 end. SBI incidents carry flow_id None — SBI messages are not correlated to
 N2 flows — and cite the service name as their procedure.
+
+The N4 plane does the same over PFCP procedures, restricted to
+session-management kinds (establishment / modification / deletion /
+report): a reject is a response carrying a non-accept Cause, a timeout is
+a request never answered by capture end. Heartbeat, association, and
+node-report procedures are maintenance traffic — evidence, never an
+incident. N4 incidents also carry flow_id None (nothing in a PFCP message
+carries an NGAP UE ID) and cite the procedure kind.
 """
 
 import re
@@ -96,5 +104,30 @@ def detect_sbi_incidents(sbi: dict) -> list[dict]:
         if p.get("outcome") == "reject":
             incident["detail"] = "SBI status code(s) observed: " + \
                 str(p.get("status"))
+        incidents.append(incident)
+    return incidents
+
+
+_SESSION_KINDS = {"session_establishment", "session_modification",
+                  "session_deletion", "session_report"}
+
+
+def detect_n4_incidents(n4: dict) -> list[dict]:
+    """One Incident per failed session-management PFCP procedure (reject
+    or timeout). Heartbeat / association / node-report procedures are
+    maintenance traffic, never incidents."""
+    incidents = []
+    for p in n4.get("procedures") or []:
+        if p.get("kind") not in _SESSION_KINDS:
+            continue
+        if p.get("outcome") not in ("reject", "timeout"):
+            continue
+        incident = {"plane": "n4", "flow_id": None,
+                    "procedure": p.get("kind") or "unknown",
+                    "shape": ("explicit reject" if p.get("outcome") == "reject"
+                              else "no terminal message (timeout)")}
+        if p.get("outcome") == "reject":
+            incident["detail"] = "PFCP cause code(s) observed: " + \
+                str(p.get("cause"))
         incidents.append(incident)
     return incidents

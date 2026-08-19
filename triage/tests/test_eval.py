@@ -78,3 +78,23 @@ def test_plane_filter_without_sbi_decode_stays_n2(tmp_path, monkeypatch):
     monkeypatch.setattr("evals.run_eval.run_lats", stub_search(seen))
     run_fixture("auth_failure", paths, "auth_failure", 1, stub_judge)
     assert [i["plane"] for i in seen] == ["n2"]
+
+
+def three_plane_decodes(tmp_path):
+    """N2 + SBI decodes (as above) plus an N4 decode with one
+    session-establishment timeout."""
+    paths = two_plane_decodes(tmp_path)
+    n4 = {"messages": [], "procedures": [
+        {"kind": "session_establishment", "outcome": "timeout"}]}
+    paths["n4"] = write_decode(tmp_path, "n4.json", n4)
+    return paths
+
+
+def test_plane_filter_n4_searches_only_n4(tmp_path, monkeypatch):
+    paths = three_plane_decodes(tmp_path)
+    seen = []
+    monkeypatch.setattr("evals.run_eval.run_lats", stub_search(seen))
+    results = run_fixture("n4_upf_timeout", paths, "n4_upf_timeout", 1,
+                          stub_judge)
+    assert [i["plane"] for i in seen] == ["n4"]
+    assert results[0]["incident_types"] == ["registration_reject"]

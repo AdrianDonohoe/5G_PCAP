@@ -1,25 +1,26 @@
 """The offline eval harness: type_accuracy + diagnosis_quality over the
 labeled failure-injection fixtures (the six N2 scenarios plus the two
-sbi_* scenarios, which join the run once their sandbox pcaps exist).
+sbi_* scenarios and n4_upf_timeout, which join the run once their sandbox
+pcaps exist).
 
 ADR-0002: lives in evals/, run explicitly (`uv run python evals/run_eval.py`
 from triage/) — every fixture run costs real Groq calls, so this never runs
-inside the pytest suite. Targets: type_accuracy >= (n-1)/n (7/8 with all
-eight fixtures enabled) and diagnosis_quality mean >= 0.7 (mean over runs;
+inside the pytest suite. Targets: type_accuracy >= (n-1)/n (8/9 with all
+nine fixtures enabled) and diagnosis_quality mean >= 0.7 (mean over runs;
 a run whose search completes no Hypothesis scores 0.0).
 
 Pipeline per fixture run: decode with 5gcap's CLI (subprocess; shared
-across the three runs; the sbi_* fixtures decode a second SBI pcap),
-auto-detect the failed Incidents, filter them to the fixture's own plane
-(a timeout fixture's SBI view can legitimately show an unanswered request
-that belongs to no N2 incident), run one LATS search per Incident
-(gpt-oss:120b via Groq), then score each Hypothesis on four 0-1 dimensions
-with an LLM judge that is a distinct model from the generator. The judge is
-qwen3.6-27b on the same Groq account: the task's judge
-(llama-3.3-70b-versatile) is not served there, and a different model family
-entirely is what "distinct" exists for. Episodic memory is reset before
-each fixture run (a fresh temp store), so consolidation never dedups
-across runs.
+across the three runs; the sbi_* fixtures decode a second SBI pcap and
+n4_upf_timeout a second N4 pcap), auto-detect the failed Incidents, filter
+them to the fixture's own plane (a timeout fixture's SBI view can
+legitimately show an unanswered request that belongs to no N2 incident),
+run one LATS search per Incident (gpt-oss:120b via Groq), then score each
+Hypothesis on four 0-1 dimensions with an LLM judge that is a distinct
+model from the generator. The judge is qwen3.6-27b on the same Groq
+account: the task's judge (llama-3.3-70b-versatile) is not served there,
+and a different model family entirely is what "distinct" exists for.
+Episodic memory is reset before each fixture run (a fresh temp store), so
+consolidation never dedups across runs.
 
 GROQ_API_KEY must be set. The `spec` Action's embedding index builds on
 first use and caches in triage/corpus/cache/ afterwards.
@@ -36,7 +37,8 @@ from pathlib import Path
 import dspy
 
 from triage.evidence import load_capture
-from triage.incidents import detect_incidents, detect_sbi_incidents
+from triage.incidents import (detect_incidents, detect_n4_incidents,
+                               detect_sbi_incidents)
 from triage.memory import MemoryStore
 from triage.search import GROQ, run_lats
 
@@ -45,6 +47,8 @@ FIXTURES = ["auth_failure", "registration_reject", "registration_timeout",
             "pdu_session_timeout"]
 # the SBI-plane pair: enabled only once their sandbox pcaps exist
 SBI_FIXTURES = ["sbi_udm_timeout", "sbi_nssf_reject"]
+# the N4-plane scenario: enabled only once its sandbox pcap exists
+N4_FIXTURES = ["n4_upf_timeout"]
 
 ROOT = Path(__file__).resolve().parent.parent      # triage/
 FIVEGCAP = ROOT.parent / "5gcap"
@@ -52,8 +56,8 @@ FIXTURE_DIR = FIVEGCAP / "tests" / "fixtures"
 
 
 def _enabled_fixtures() -> list[str]:
-    """FIXTURES plus the sbi_* pair whose pcaps have been captured."""
-    return FIXTURES + [name for name in SBI_FIXTURES
+    """FIXTURES plus the sbi_*/n4_* scenarios whose pcaps were captured."""
+    return FIXTURES + [name for name in SBI_FIXTURES + N4_FIXTURES
                        if (FIXTURE_DIR / f"{name}.pcap").exists()]
 
 # Same Groq vendor-prefix gotcha as triage.search.GROQ: dspy strips the
@@ -89,7 +93,15 @@ class JudgeSignature(dspy.Signature):
     between network functions: a status >= 400 or an unanswered request IS
     the mechanism. Score the hypothesis on what was requested, what was
     answered (or that nothing answered), and that nothing else in the
-    decode contradicts it."""
+    decode contradicts it.
+
+    For an N4-plane failure the decode holds PFCP request/response pairs
+    between the SMF and UPF: a response carrying a non-accept Cause or an
+    unanswered request IS the mechanism. A timeout's retransmission burst
+    (the same request repeated every ~2.5 s) is evidence of the silence,
+    not of multiple failures. Score the hypothesis on what was requested,
+    what was answered (or that nothing answered), and that nothing else
+    in the decode contradicts it."""
     hypothesis: str = dspy.InputField(desc="The hypothesis being scored")
     decoded: str = dspy.InputField(
         desc="The decoded messages to check claims against")
@@ -147,7 +159,7 @@ def default_judge():
 def decode_fixture(name: str, workdir: Path) -> dict[str, Path]:
     """Decode one fixture's pcaps with 5gcap's CLI (the JSON contract, not
     fivegcap's Python API): every fixture has an N2 pcap; the sbi_* pair
-    additionally has an SBI pcap."""
+    additionally has an SBI pcap, n4_upf_timeout an N4 pcap."""
     paths = {"n2": workdir / f"{name}_n2.json"}
     subprocess.run(["uv", "run", "5gcap", "analyze",
                     str(FIXTURE_DIR / f"{name}.pcap"), "--json",
@@ -158,6 +170,12 @@ def decode_fixture(name: str, workdir: Path) -> dict[str, Path]:
         subprocess.run(["uv", "run", "5gcap", "analyze",
                         str(FIXTURE_DIR / f"{name}_sbi.pcap"), "--json",
                         str(paths["sbi"])], cwd=FIVEGCAP, check=True,
+                       capture_output=True, text=True)
+    if name in N4_FIXTURES:
+        paths["n4"] = workdir / f"{name}_n4.json"
+        subprocess.run(["uv", "run", "5gcap", "analyze",
+                        str(FIXTURE_DIR / f"{name}_n4.pcap"), "--json",
+                        str(paths["n4"])], cwd=FIVEGCAP, check=True,
                        capture_output=True, text=True)
     return paths
 
@@ -214,14 +232,34 @@ def _sbi_brief(capture) -> str:
     return "\n".join(lines)
 
 
+def _n4_brief(capture) -> str:
+    """The N4-plane decode, for the judge to check claims against: each
+    PFCP message with its cause, plus the procedure outcomes."""
+    msgs = (capture.n4 or {}).get("messages") or []
+    if not msgs:
+        return "(no N4 messages in this capture)"
+    lines = [f"N4 messages ({len(msgs)}):"]
+    for msg in msgs:
+        line = f"{msg['ts']:.3f} {msg.get('name') or '?'}"
+        if msg.get("cause"):
+            line += f" cause {msg['cause']} ({msg.get('cause_code')})"
+        lines.append(line)
+    for proc in (capture.n4 or {}).get("procedures") or []:
+        line = f"procedure {proc.get('kind')}: {proc.get('outcome')}"
+        if proc.get("cause") is not None:
+            line += f" cause {proc['cause']} ({proc.get('cause_name')})"
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def _hypothesis_brief(incident: dict, episode) -> str:
     cited = "; ".join(
         ev.message
         + (f" cause #{ev.cause}" if ev.cause is not None else "")
         + (f" @{ev.ts:.3f}s" if ev.ts is not None else "")
         for ev in episode.cited_evidence)
-    flow = ("SBI — " + str(incident.get("procedure"))
-            if incident.get("plane") == "sbi"
+    flow = (f"{incident['plane'].upper()} — " + str(incident.get("procedure"))
+            if incident.get("plane") in ("sbi", "n4")
             else f"flow {incident['flow_id']}")
     return (f"Procedure: {incident['procedure']} ({incident['shape']}), "
             f"{flow}\n"
@@ -235,14 +273,18 @@ def _hypothesis_brief(incident: dict, episode) -> str:
 def run_fixture(name: str, paths: dict, label: str, runs: int,
                 judge, done: set | None = None) -> list[dict]:
     done = done or set()
-    capture = load_capture(str(paths["n2"]), sbi_path=paths.get("sbi"))
+    capture = load_capture(str(paths["n2"]), n4_path=paths.get("n4"),
+                           sbi_path=paths.get("sbi"))
     incidents = detect_incidents(capture.n2)
+    if paths.get("n4") is not None:
+        incidents += detect_n4_incidents(capture.n4)
     if paths.get("sbi") is not None:
         incidents += detect_sbi_incidents(capture.sbi)
     # each fixture searches only its own plane's incidents: the SBI view of
     # an N2 failure can legitimately hold an unanswered request (the SMF is
     # blackholed, so its API never answers) that belongs to no N2 Incident
-    plane = "sbi" if name in SBI_FIXTURES else "n2"
+    plane = ("n4" if name in N4_FIXTURES else
+             "sbi" if name in SBI_FIXTURES else "n2")
     incidents = [i for i in incidents if i.get("plane", "n2") == plane]
     if not incidents:
         print(f"{name}: no Incidents detected in the decode — "
@@ -267,6 +309,8 @@ def run_fixture(name: str, paths: dict, label: str, runs: int,
         scored = []
         for incident, res in hypotheses:
             brief = (_sbi_brief(capture) if incident.get("plane") == "sbi"
+                     else _n4_brief(capture)
+                     if incident.get("plane") == "n4"
                      else _flow_brief(capture, incident["flow_id"]))
             verdict = judge(_hypothesis_brief(incident, res.episode), brief)
             verdict.update(flow_id=incident["flow_id"],
@@ -340,7 +384,7 @@ def report(results: list[dict]) -> dict:
             f"{dim}={v:.2f}" for dim, v in summary["dimension_means"].items()),
         "per fixture:",
     ]
-    for name in FIXTURES + SBI_FIXTURES:
+    for name in FIXTURES + SBI_FIXTURES + N4_FIXTURES:
         if name in fixture_ta:
             lines.append(f"  {name:24s} type_accuracy={fixture_ta[name]:.3f} "
                          f" diagnosis_quality={diag_by_fixture[name]:.3f}")
@@ -364,7 +408,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     names = ([n.strip() for n in args.fixtures.split(",") if n.strip()]
              if args.fixtures else _enabled_fixtures())
-    unknown = [n for n in names if n not in FIXTURES + SBI_FIXTURES]
+    unknown = [n for n in names
+               if n not in FIXTURES + SBI_FIXTURES + N4_FIXTURES]
     if unknown:
         print(f"evals: error: unknown fixture(s): {', '.join(unknown)}",
               file=sys.stderr)

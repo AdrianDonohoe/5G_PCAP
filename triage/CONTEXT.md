@@ -1,8 +1,9 @@
 # triage
 
 LLM-agent root-cause hypothesis generation for failed 5G Registration and PDU
-Session Activation Procedures and SBI service transactions, built on top of
-5gcap's decode output (N2, N4, SBI planes). Invoked
+Session Activation Procedures, SBI service transactions, and N4
+session-management procedures, built on top of 5gcap's decode output (N2,
+N4, SBI planes). Invoked
 one-shot: the CLI consumes a single decoded Capture and the agent runs once
 per failed Incident within it; not a live/streaming monitor.
 Architecture rationale: [`docs/adr/0001-lats-coala-triage-agent.md`](./docs/adr/0001-lats-coala-triage-agent.md).
@@ -11,19 +12,29 @@ Architecture rationale: [`docs/adr/0001-lats-coala-triage-agent.md`](./docs/adr/
 
 **Incident**:
 A single failed Procedure (Registration or PDU Session Activation) within one
-N2 Flow, or a failed SBI service transaction (one HTTP request/response
-pair) — either an explicit Reject with a cause code (or an HTTP status >=
-400), or a terminal message that never arrives (an unanswered SBI request).
-The unit of work the agent is invoked on. SBI Incidents carry no flow_id:
-SBI messages are not correlated to N2 flows.
+N2 Flow, a failed SBI service transaction (one HTTP request/response
+pair), or an **N4 incident** (below) — either an explicit Reject with a
+cause code (or an HTTP status >= 400), or a terminal message that never
+arrives (an unanswered SBI request). The unit of work the agent is invoked
+on. SBI and N4 Incidents carry no flow_id: neither plane's messages are
+correlated to N2 flows.
 _Avoid_: alert, event, case
+
+**N4 incident**:
+A failed session-management PFCP procedure (session establishment /
+modification / deletion / report) on the N4 plane — an explicit Reject
+carrying a PFCP Cause, or a request never answered by capture end.
+Heartbeat, association, and node-report procedures are maintenance traffic:
+listable and citable as Evidence, never an Incident.
+_Avoid_: PFCP failure, UPF error
 
 **Evidence**:
 A concrete fact drawn from 5gcap's decode output — a specific message, IE,
 Cause value, or (on the SBI plane) service transaction — that a Hypothesis
 cites to support its claim. A Hypothesis with no Evidence is not a valid
 Hypothesis. SBI Evidence cites the service name with `cause = None`; the
-HTTP status lives in the narrative prose.
+HTTP status lives in the narrative prose. N4 Evidence cites the PFCP
+message name; a cause-bearing response carries the numeric PFCP cause.
 _Avoid_: proof, data, context
 
 **Hypothesis**:
@@ -34,13 +45,13 @@ _Avoid_: diagnosis, answer, result
 
 **incident_type**:
 The canonical category a Hypothesis is classified into — a closed set of
-eight, one per (Procedure × failure shape) combination: `auth_failure`,
+nine, one per (Procedure × failure shape) combination: `auth_failure`,
 `registration_reject`, `registration_timeout`, `pdu_session_reject_slice`,
 `pdu_session_reject_other`, `pdu_session_timeout`, `sbi_udm_timeout`,
-`sbi_nssf_reject`. Maps one-to-one onto the
+`sbi_nssf_reject`, `n4_upf_timeout`. Maps one-to-one onto the
 sandbox's failure-injection scenario labels, which supply ground truth for
 `type_accuracy`. New categories are added only when a real failure shape
-doesn't fit any of these eight, not speculatively.
+doesn't fit any of these nine, not speculatively.
 _Avoid_: category, label, class
 
 **Action**:

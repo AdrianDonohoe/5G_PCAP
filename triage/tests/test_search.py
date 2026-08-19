@@ -313,7 +313,8 @@ def test_objective_text():
                           "pdu_session_reject_slice",
                           "pdu_session_reject_other",
                           "pdu_session_timeout",
-                          "sbi_udm_timeout", "sbi_nssf_reject"):
+                          "sbi_udm_timeout", "sbi_nssf_reject",
+                          "n4_upf_timeout"):
         assert incident_type in text
 
 
@@ -325,6 +326,16 @@ def test_objective_text_sbi_incident():
     assert "on the SBI plane" in text
     assert "flow None" not in text
     assert "sbi[:<i>]" in text  # the handle space lists the SBI handles
+    assert "There is no reject message" in text  # timeout special-case fires
+
+
+def test_objective_text_n4_incident():
+    text = objective_text({"plane": "n4", "flow_id": None,
+                           "procedure": "session_establishment",
+                           "shape": "no terminal message (timeout)"})
+    assert "session_establishment procedure failed" in text
+    assert "on the N4 plane" in text
+    assert "flow None" not in text
     assert "There is no reject message" in text  # timeout special-case fires
 
 
@@ -400,6 +411,70 @@ def test_sbi_evidence_ungrounded_without_sbi_loaded():
     observation, ep = execute_action(mini_capture(), f"finalize {episode}")
     assert "no cited evidence matches a decoded message" in observation
     assert ep is None
+
+
+def n4_capture():
+    return DecodedCapture(n2={}, n4={
+        "messages": [{
+            "ts": 1000.0, "src_ip": "10.0.0.1", "dst_ip": "10.0.0.2",
+            "src_port": 8805, "dst_port": 8805,
+            "name": "PFCP Session Establishment Request", "seq": 1,
+            "seid": None, "cause": None, "cause_code": None,
+            "unparsed": None}],
+        "procedures": [{
+            "kind": "session_establishment", "start_ts": 1000.0,
+            "end_ts": 1000.0, "start_msg": "PFCP Session Establishment Request",
+            "end_msg": None, "outcome": "timeout", "cause": None,
+            "cause_name": None, "duration_ms": 0.0}],
+        "unpaired_requests": 1})
+
+
+def test_n4_timeout_evidence_grounds():
+    # cited (PFCP message name, ts) matches; cause is null on a timeout
+    episode = json.dumps({
+        "incident_type": "n4_upf_timeout",
+        "narrative": "the UPF never answered the SMF's establishment request",
+        "cited_evidence": [{"message": "PFCP Session Establishment Request",
+                            "cause": None, "ts": 1000.0}]})
+    observation, ep = execute_action(n4_capture(), f"finalize {episode}")
+    assert "finalize accepted" in observation
+    assert ep.incident_type == "n4_upf_timeout"
+
+
+def test_n4_reject_evidence_grounds_cause():
+    # a cause-bearing PFCP response grounds the numeric cause via
+    # cause_code (message "cause" stays the name string)
+    capture = DecodedCapture(n2={}, n4={"messages": [
+        {"ts": 1001.0, "name": "PFCP Session Establishment Response",
+         "cause": "No resources available", "cause_code": 75}]})
+    episode = json.dumps({
+        "incident_type": "n4_upf_timeout",
+        "narrative": "x",
+        "cited_evidence": [{"message": "PFCP Session Establishment Response",
+                            "cause": 75, "ts": 1001.0}]})
+    observation, ep = execute_action(capture, f"finalize {episode}")
+    assert "finalize accepted" in observation
+    wrong = json.dumps({
+        "incident_type": "n4_upf_timeout",
+        "narrative": "x",
+        "cited_evidence": [{"message": "PFCP Session Establishment Response",
+                            "cause": 1, "ts": 1001.0}]})
+    observation, ep = execute_action(capture, f"finalize {wrong}")
+    assert "no cited evidence matches a decoded message" in observation
+    assert ep is None
+
+
+def test_memory_context_n4_incident(tmp_path):
+    # flow_id None -> no N2 flow to mine; n4_upf_timeout maps onto
+    # "PDU Session" episodes
+    store = MemoryStore(tmp_path / "episodes.jsonl")
+    store.add({"incident_type": "n4_upf_timeout",
+               "narrative": "UPF blackholed on a past run",
+               "cited_evidence": [{"message": "PFCP Session Establishment Request",
+                                   "ts": 999.0}]})
+    text = memory_context(store, {"plane": "n4", "flow_id": None,
+                                  "procedure": "PDU Session"}, None)
+    assert "UPF blackholed on a past run" in text
 
 
 def test_memory_context_sbi_incident(tmp_path):

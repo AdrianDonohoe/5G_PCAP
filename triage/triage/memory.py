@@ -30,6 +30,7 @@ INCIDENT_TYPES = Literal[
     "pdu_session_timeout",
     "sbi_udm_timeout",
     "sbi_nssf_reject",
+    "n4_upf_timeout",
 ]
 
 DEFAULT_PATH = Path(__file__).resolve().parent.parent / "memory" / "episodes.jsonl"

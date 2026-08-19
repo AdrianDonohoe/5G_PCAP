@@ -1,7 +1,8 @@
 """detect_incidents tests against the sandbox fixtures' real wire shapes
 (no models, no network — synthetic n2/sbi dicts only)."""
 
-from triage.incidents import detect_incidents, detect_sbi_incidents
+from triage.incidents import (detect_incidents, detect_n4_incidents,
+                               detect_sbi_incidents)
 
 
 def msg(ts, nas="", inner="", ngap="", cause=None):
@@ -177,3 +178,41 @@ def test_sbi_accept_procedures_skipped():
     assert detect_sbi_incidents(
         {"procedures": [sbi_proc("Nudm_SDM", "accept", 200)]}) == []
     assert detect_sbi_incidents({}) == []
+
+
+def n4_proc(kind, outcome, cause=None):
+    p = {"kind": kind, "outcome": outcome}
+    if cause is not None:
+        p["cause"] = cause
+    return p
+
+
+def test_n4_timeout_detected():
+    # n4_upf_timeout: the SMF's Session Establishment Request is never
+    # answered (blackholed UPF)
+    n4 = {"procedures": [n4_proc("session_establishment", "timeout")]}
+    incidents = detect_n4_incidents(n4)
+    assert incidents == [{"plane": "n4", "flow_id": None,
+                          "procedure": "session_establishment",
+                          "shape": "no terminal message (timeout)"}]
+
+
+def test_n4_reject_detected():
+    n4 = {"procedures": [n4_proc("session_establishment", "reject", 75)]}
+    incidents = detect_n4_incidents(n4)
+    assert incidents == [{"plane": "n4", "flow_id": None,
+                          "procedure": "session_establishment",
+                          "shape": "explicit reject",
+                          "detail": "PFCP cause code(s) observed: 75"}]
+
+
+def test_n4_maintenance_and_accept_procedures_skipped():
+    # unanswered heartbeats and association retries are evidence, not
+    # incidents (the mid-session blackhole shape); accepts are golden
+    n4 = {"procedures": [
+        n4_proc("heartbeat", "timeout"),
+        n4_proc("association_setup", "timeout"),
+        n4_proc("node_report", "timeout"),
+        n4_proc("session_modification", "accept", 1)]}
+    assert detect_n4_incidents(n4) == []
+    assert detect_n4_incidents({}) == []

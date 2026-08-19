@@ -64,7 +64,7 @@ def captured(capsys):
 
 def test_analyze_success(fake_search, fake_consolidate, monkeypatch, capsys):
     monkeypatch.setattr("triage.cli.load_capture",
-                        lambda n2, n4=None, sbi=None: SimpleNamespace(
+                        lambda n2, n4=None, sbi=None: SimpleNamespace(n4=None, 
                             n2={"flows": [reject_flow(1)]}, sbi=sbi))
     assert main(["analyze", "capture_n2.json"]) == 0
     results, err = captured(capsys)
@@ -83,7 +83,7 @@ def test_analyze_success(fake_search, fake_consolidate, monkeypatch, capsys):
 
 def test_zero_incidents_is_success(monkeypatch, capsys):
     monkeypatch.setattr("triage.cli.load_capture",
-                        lambda n2, n4=None, sbi=None: SimpleNamespace(
+                        lambda n2, n4=None, sbi=None: SimpleNamespace(n4=None, 
                             n2={"flows": [{"flow_id": 1, "messages": [],
                                            "procedures": [], "partial": False}]},
                             sbi=sbi))
@@ -97,7 +97,7 @@ def test_flow_filter_runs_only_matching_incident(fake_search,
                                                  fake_consolidate,
                                                  monkeypatch, capsys):
     monkeypatch.setattr("triage.cli.load_capture",
-                        lambda n2, n4=None, sbi=None: SimpleNamespace(
+                        lambda n2, n4=None, sbi=None: SimpleNamespace(n4=None, 
                             n2={"flows": [reject_flow(1), reject_flow(2)]},
                             sbi=sbi))
     assert main(["analyze", "x.json", "--flow", "2"]) == 0
@@ -108,7 +108,7 @@ def test_flow_filter_runs_only_matching_incident(fake_search,
 
 def test_flow_filter_matching_none(monkeypatch, capsys):
     monkeypatch.setattr("triage.cli.load_capture",
-                        lambda n2, n4=None, sbi=None: SimpleNamespace(
+                        lambda n2, n4=None, sbi=None: SimpleNamespace(n4=None, 
                             n2={"flows": [reject_flow(1)]}, sbi=sbi))
     assert main(["analyze", "x.json", "--flow", "9"]) == 0
     results, err = captured(capsys)
@@ -182,7 +182,7 @@ def test_load_error_exits_1(monkeypatch, capsys):
 
 def test_groq_key_error_exits_1(fake_consolidate, monkeypatch, capsys):
     monkeypatch.setattr("triage.cli.load_capture",
-                        lambda n2, n4=None, sbi=None: SimpleNamespace(
+                        lambda n2, n4=None, sbi=None: SimpleNamespace(n4=None, 
                             n2={"flows": [reject_flow(1)]}, sbi=sbi))
 
     def no_key(capture, incident, store=None, **kwargs):
@@ -198,7 +198,7 @@ def test_groq_key_error_exits_1(fake_consolidate, monkeypatch, capsys):
 def test_no_hypothesis_reports_null_episode(fake_consolidate, monkeypatch,
                                             capsys):
     monkeypatch.setattr("triage.cli.load_capture",
-                        lambda n2, n4=None, sbi=None: SimpleNamespace(
+                        lambda n2, n4=None, sbi=None: SimpleNamespace(n4=None, 
                             n2={"flows": [reject_flow(1)]}, sbi=sbi))
     monkeypatch.setattr("triage.cli.run_lats",
                         lambda capture, incident, store=None, **kwargs:
@@ -215,7 +215,7 @@ def test_no_hypothesis_reports_null_episode(fake_consolidate, monkeypatch,
 
 def test_duplicate_episode_not_written(monkeypatch, capsys):
     monkeypatch.setattr("triage.cli.load_capture",
-                        lambda n2, n4=None, sbi=None: SimpleNamespace(
+                        lambda n2, n4=None, sbi=None: SimpleNamespace(n4=None, 
                             n2={"flows": [reject_flow(1)]}, sbi=sbi))
     monkeypatch.setattr("triage.cli.run_lats",
                         lambda capture, incident, store=None, **kwargs:
@@ -237,7 +237,7 @@ def test_episodes_path_override(monkeypatch, tmp_path, capsys):
             seen.append(path)
             self.backing = {}
     monkeypatch.setattr("triage.cli.load_capture",
-                        lambda n2, n4=None, sbi=None: SimpleNamespace(
+                        lambda n2, n4=None, sbi=None: SimpleNamespace(n4=None, 
                             n2={"flows": [reject_flow(1)]}, sbi=sbi))
     monkeypatch.setattr("triage.cli.run_lats",
                         lambda capture, incident, store=None, **kwargs:
@@ -255,7 +255,7 @@ def test_episodes_path_override(monkeypatch, tmp_path, capsys):
 def test_verbose_prints_trajectory(fake_search, fake_consolidate,
                                    monkeypatch, capsys):
     monkeypatch.setattr("triage.cli.load_capture",
-                        lambda n2, n4=None, sbi=None: SimpleNamespace(
+                        lambda n2, n4=None, sbi=None: SimpleNamespace(n4=None, 
                             n2={"flows": [reject_flow(1)]}, sbi=sbi))
     assert main(["analyze", "x.json", "--verbose"]) == 0
     err = capsys.readouterr().err
@@ -267,7 +267,7 @@ def test_verbose_prints_trajectory(fake_search, fake_consolidate,
 def test_out_writes_same_json(fake_search, fake_consolidate, monkeypatch,
                               tmp_path, capsys):
     monkeypatch.setattr("triage.cli.load_capture",
-                        lambda n2, n4=None, sbi=None: SimpleNamespace(
+                        lambda n2, n4=None, sbi=None: SimpleNamespace(n4=None, 
                             n2={"flows": [reject_flow(1)]}, sbi=sbi))
     out = tmp_path / "results.json"
     assert main(["analyze", "x.json", "--out", str(out)]) == 0
@@ -423,7 +423,7 @@ def test_analyze_report_flag_writes_report(no_graph, fake_search,
 def test_analyze_report_no_hypothesis(no_graph, fake_consolidate,
                                       monkeypatch, tmp_path, capsys):
     monkeypatch.setattr("triage.cli.load_capture",
-                        lambda n2, n4=None, sbi=None: SimpleNamespace(
+                        lambda n2, n4=None, sbi=None: SimpleNamespace(n4=None, 
                             n2={"flows": [reject_flow(1)]}, sbi=sbi))
     monkeypatch.setattr("triage.cli.run_lats",
                         lambda capture, incident, store=None, **kwargs:
@@ -438,7 +438,7 @@ def test_analyze_report_no_hypothesis(no_graph, fake_consolidate,
 def test_analyze_report_zero_incidents(no_graph, monkeypatch, tmp_path,
                                        capsys):
     monkeypatch.setattr("triage.cli.load_capture",
-                        lambda n2, n4=None, sbi=None: SimpleNamespace(
+                        lambda n2, n4=None, sbi=None: SimpleNamespace(n4=None, 
                             n2={"flows": [{"flow_id": 1, "messages": [],
                                            "procedures": [],
                                            "partial": False}]},
@@ -455,7 +455,7 @@ def test_analyze_report_write_error_exits_1(no_graph, fake_search,
                                             fake_consolidate, monkeypatch,
                                             tmp_path, capsys):
     monkeypatch.setattr("triage.cli.load_capture",
-                        lambda n2, n4=None, sbi=None: SimpleNamespace(
+                        lambda n2, n4=None, sbi=None: SimpleNamespace(n4=None, 
                             n2={"flows": [reject_flow(1)]}, sbi=sbi))
 
     def boom(results, capture, path, graph=None):
@@ -472,10 +472,53 @@ def test_saved_result_has_trajectory_and_detail(fake_search,
                                                 fake_consolidate,
                                                 monkeypatch, capsys):
     monkeypatch.setattr("triage.cli.load_capture",
-                        lambda n2, n4=None, sbi=None: SimpleNamespace(
+                        lambda n2, n4=None, sbi=None: SimpleNamespace(n4=None, 
                             n2={"flows": [reject_flow(1)]}, sbi=sbi))
     assert main(["analyze", "capture_n2.json"]) == 0
     results, _ = captured(capsys)
     result = results[0]
     assert result["trajectory"] == [["inspect flows", "Flow 1 (2 message(s))"]]
     assert result["detail"] == "cause code(s) observed: #111"
+
+
+def n4_timeout_procedure():
+    return {"kind": "session_establishment", "outcome": "timeout"}
+
+
+def test_analyze_n4_incidents(fake_search, fake_consolidate, monkeypatch,
+                              capsys, tmp_path):
+    n4 = tmp_path / "capture_n4.json"
+    n4.write_text(json.dumps({"messages": [], "procedures": [
+        n4_timeout_procedure()]}) + "\n")
+    monkeypatch.setattr("triage.cli.load_capture",
+                        lambda n2, n4=None, sbi=None: SimpleNamespace(
+                            n2={"flows": []},
+                            n4=json.loads(Path(n4).read_text())
+                            if n4 else None, sbi=None))
+    assert main(["analyze", "capture_n2.json", "--n4", str(n4)]) == 0
+    assert [flow_id for flow_id, _ in fake_search] == [None]
+    results, err = captured(capsys)
+    assert len(results) == 1
+    result = results[0]
+    assert result["plane"] == "n4"
+    assert result["flow_id"] is None
+    assert result["procedure"] == "session_establishment"
+    assert result["shape"] == "no terminal message (timeout)"
+    assert result["detail"] is None  # timeouts carry no detail, like SBI
+    assert ("N4 session_establishment session_establishment "
+            "(no terminal message (timeout))") in err
+
+
+def test_flow_filter_drops_n4_incidents(fake_search, fake_consolidate,
+                                        monkeypatch, capsys, tmp_path):
+    n4 = tmp_path / "capture_n4.json"
+    n4.write_text(json.dumps({"messages": [], "procedures": [
+        n4_timeout_procedure()]}) + "\n")
+    monkeypatch.setattr("triage.cli.load_capture",
+                        lambda n2, n4=None, sbi=None: SimpleNamespace(
+                            n2={"flows": [reject_flow(1)]},
+                            n4=json.loads(Path(n4).read_text())
+                            if n4 else None, sbi=None))
+    assert main(["analyze", "capture_n2.json", "--n4", str(n4),
+                 "--flow", "1"]) == 0
+    assert [flow_id for flow_id, _ in fake_search] == [1]

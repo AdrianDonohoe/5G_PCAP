@@ -618,3 +618,135 @@ def test_sbi_no_hypothesis_label():
     assert report.startswith("# Post-incident report — no hypothesis "
                              "(SBI — Nnssf_NSSelection)")
     assert "**Flow:** SBI — Nnssf_NSSelection, explicit reject" in report
+
+
+# --- N4 plane --------------------------------------------------------
+
+def n4_capture():
+    """A decoded N4 capture: one unanswered Session Establishment Request
+    (the n4_upf_timeout shape)."""
+    return DecodedCapture(n2={}, n4={
+        "kpis": {},
+        "messages": [{
+            "ts": 1.0, "src_ip": "10.0.0.1", "dst_ip": "10.0.0.2",
+            "src_port": 8805, "dst_port": 8805,
+            "name": "PFCP Session Establishment Request", "seq": 1,
+            "seid": None, "cause": None, "cause_code": None,
+            "unparsed": None}],
+        "procedures": [{
+            "kind": "session_establishment", "start_ts": 1.0,
+            "end_ts": 1.0, "start_msg": "PFCP Session Establishment Request",
+            "end_msg": None, "outcome": "timeout", "cause": None,
+            "cause_name": None, "duration_ms": 0.0}],
+        "unpaired_requests": 1})
+
+
+def saved_n4_run(**overrides):
+    result = {
+        "plane": "n4",
+        "flow_id": None,
+        "procedure": "session_establishment",
+        "shape": "no terminal message (timeout)",
+        "detail": None,
+        "episode": {
+            "incident_type": "n4_upf_timeout",
+            "narrative": "The UPF never answered the SMF's Session "
+                         "Establishment Request.",
+            "cited_evidence": [
+                {"message": "PFCP Session Establishment Request",
+                 "cause": None, "ts": 1.0},
+            ],
+            "created_at": "2026-08-19T00:00:00Z",
+        },
+        "reward": 0.8,
+        "rollouts": 3,
+        "trajectory": [
+            ["inspect n4:1", "Evidence n4:1:"],
+            ["finalize {...}",
+             "finalize accepted: hypothesis grounded in 1 evidence "
+             "item(s)."],
+        ],
+        "memory_wrote": True,
+    }
+    result.update(overrides)
+    return result
+
+
+EXPECTED_N4_SINGLE = """\
+# Post-incident report — n4_upf_timeout
+
+**Flow:** N4 — session_establishment, no terminal message (timeout)
+**Hypothesis:** n4_upf_timeout (reward 0.8, 3 rollouts)
+
+## Root cause
+The UPF never answered the SMF's Session Establishment Request.
+
+## Evidence
+- [verified] PFCP Session Establishment Request @ 1.000s
+
+## Timeline (N4)
+[1] 1.000s  PFCP Session Establishment Request -> no response
+
+## Capture KPIs
+(no KPIs in this capture)
+
+## Search path
+[1] inspect n4:1 -> Evidence n4:1:
+[2] finalize {...} -> finalize accepted: hypothesis grounded in 1 evidence item(s).
+
+## Memory
+new Episode written (n4_upf_timeout)
+"""
+
+
+def test_n4_single_report_byte_exact():
+    report = build_report([saved_n4_run()], n4_capture())
+    assert report == EXPECTED_N4_SINGLE
+
+
+def test_n4_timeline_answered_request():
+    capture = DecodedCapture(n2={}, n4={"messages": [
+        {"ts": 1.0, "src_ip": "10.0.0.1", "dst_ip": "10.0.0.2",
+         "src_port": 8805, "dst_port": 8805,
+         "name": "PFCP Session Establishment Request", "seq": 2,
+         "seid": None, "cause": None, "cause_code": None, "unparsed": None},
+        {"ts": 1.2, "src_ip": "10.0.0.2", "dst_ip": "10.0.0.1",
+         "src_port": 8805, "dst_port": 8805,
+         "name": "PFCP Session Establishment Response", "seq": 2,
+         "seid": None, "cause": "No resources available", "cause_code": 75,
+         "unparsed": None}]})
+    result = saved_n4_run(shape="explicit reject",
+                          detail="PFCP cause code(s) observed: 75")
+    report = build_report([result], capture)
+    assert "## Timeline (N4)" in report
+    assert ("[1] 1.000s  PFCP Session Establishment Request "
+            "-> No resources available") in report
+    assert ("[2] 1.200s  -> No resources available "
+            "(PFCP Session Establishment Response)") in report
+
+
+def test_n4_evidence_unverified_without_n4_loaded():
+    report = build_report([saved_n4_run()], synthetic_capture())
+    assert "- [unverified] PFCP Session Establishment Request @ 1.000s" \
+        in report
+    # the saved result still declares its plane: N4 timeline, no messages
+    assert "## Timeline (N4)" in report
+    assert "(no N4 messages in this capture)" in report
+
+
+def test_multi_incident_n4_flow_label():
+    report = build_report([saved_run(), saved_n4_run()], synthetic_capture())
+    assert "| 2 | N4 — session_establishment | n4_upf_timeout | 0.8 | 3 |" \
+        in report
+    assert ("## Incident 2 — n4_upf_timeout — "
+            "N4 — session_establishment") in report
+
+
+def test_n4_no_hypothesis_label():
+    result = saved_n4_run(episode=None, reward=0.0, rollouts=10,
+                          trajectory=[], memory_wrote=False)
+    report = build_report([result], n4_capture())
+    assert report.startswith("# Post-incident report — no hypothesis "
+                             "(N4 — session_establishment)")
+    assert "**Flow:** N4 — session_establishment, " \
+           "no terminal message (timeout)" in report

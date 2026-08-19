@@ -42,7 +42,8 @@ TOOLS = ("inspect", "topology", "spec", "memory", "finalize")
 INCIDENT_TYPES = ["auth_failure", "registration_reject",
                   "registration_timeout", "pdu_session_reject_slice",
                   "pdu_session_reject_other", "pdu_session_timeout",
-                  "sbi_udm_timeout", "sbi_nssf_reject"]
+                  "sbi_udm_timeout", "sbi_nssf_reject",
+                  "n4_upf_timeout"]
 
 # dspy treats the first segment of the model string as its provider and
 # sends the rest; Groq's own model IDs carry an "openai/" vendor prefix
@@ -96,7 +97,7 @@ def _message_inventory(capture: DecodedCapture) -> dict:
             inventory[(msg["ngap"], msg["ts"])] = None
     for msg in (capture.n4 or {}).get("messages") or []:
         if msg.get("name") and msg.get("ts") is not None:
-            inventory[(msg["name"], msg["ts"])] = None
+            inventory[(msg["name"], msg["ts"])] = msg.get("cause_code")
     for msg in (capture.sbi or {}).get("messages") or []:
         if msg.get("name") and msg.get("ts") is not None:
             inventory[(msg["name"], msg["ts"])] = None
@@ -169,6 +170,8 @@ def _procedure_of(incident_type: str) -> str | None:
         return "Registration"  # the hung auth-vector fetch stalls registration
     if incident_type == "sbi_nssf_reject":
         return "PDU Session"   # the slice consult happens during PDU session setup
+    if incident_type == "n4_upf_timeout":
+        return "PDU Session"   # the N4 view of PDU session establishment
     return None
 
 
@@ -227,9 +230,10 @@ def objective_text(incident: dict, memory: str = "") -> str:
     if incident.get("flow_id") is not None:
         lines = [f"Explain why the {incident['procedure']} procedure failed "
                  f"for flow {incident['flow_id']} in this decoded 5G capture."]
-    else:  # SBI incidents: no N2 flow; the procedure IS the service
+    else:  # SBI/N4 incidents: no N2 flow; the procedure IS the plane's unit
+        plane = {"sbi": "SBI", "n4": "N4"}.get(incident.get("plane"), "SBI")
         lines = [f"Explain why the {incident['procedure']} procedure failed "
-                 f"on the SBI plane in this decoded 5G capture."]
+                 f"on the {plane} plane in this decoded 5G capture."]
     if incident.get("shape"):
         lines.append(f"Failure shape: {incident['shape']}.")
     if incident.get("shape") == "no terminal message (timeout)":
@@ -417,7 +421,7 @@ class ExpandSignature(dspy.Signature):
     {"incident_type": "<one of auth_failure, registration_reject,
     registration_timeout, pdu_session_reject_slice,
     pdu_session_reject_other, pdu_session_timeout, sbi_udm_timeout,
-    sbi_nssf_reject>",
+    sbi_nssf_reject, n4_upf_timeout>",
     "narrative": "<one-sentence root-cause explanation>",
     "cited_evidence": [{"message": "<decoded message name>",
     "cause": <code or null>, "ts": <timestamp from observation>}]}
@@ -440,7 +444,14 @@ class ExpandSignature(dspy.Signature):
     null) — sbi_nssf_reject when the Nnssf_NSSelection consult is
     rejected (e.g. 403); an unanswered SBI request is a timeout, and
     sbi_udm_timeout is the type when a Nudm_* request (e.g. AUSF's
-    Nudm_UEAuthentication) never gets a response. Never repeat an action
+    Nudm_UEAuthentication) never gets a response. On the N4 plane:
+    n4_upf_timeout is the type when a session-management PFCP procedure
+    (e.g. session_establishment) times out — cite the unanswered PFCP
+    Session Establishment Request(s) (the SMF retransmits every ~2.5 s,
+    the burst is the timeout's signature) with cause null and the ts of
+    the first send; a PFCP response carrying a non-accept Cause is an
+    explicit reject and the numeric cause belongs in the cited evidence's
+    cause field. Never repeat an action
     already in the trajectory, and prefer finalize over more
     evidence-gathering once the failure's key evidence has been
     observed."""

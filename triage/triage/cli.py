@@ -21,7 +21,8 @@ import sys
 from pathlib import Path
 
 from triage.evidence import load_capture
-from triage.incidents import detect_incidents, detect_sbi_incidents
+from triage.incidents import (detect_incidents, detect_n4_incidents,
+                               detect_sbi_incidents)
 from triage.memory import MemoryStore, consolidate
 from triage.report import build_report, load_graph, write_report
 from triage.search import run_lats
@@ -45,7 +46,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
                          help="optional 5gcap SBI decode output")
     analyze.add_argument("--flow", type=int,
                          help="only triage Incidents in this N2 flow "
-                              "(SBI Incidents have no flow)")
+                              "(SBI/N4 Incidents have no flow)")
     analyze.add_argument("--episodes-path", metavar="PATH",
                          help="episodic memory store override (default: "
                               "triage/memory/episodes.jsonl)")
@@ -133,10 +134,12 @@ def main(argv: list[str] | None = None) -> int:
     store = MemoryStore(Path(args.episodes_path)) if args.episodes_path \
         else MemoryStore()
     incidents = detect_incidents(capture.n2)
+    if capture.n4 is not None:
+        incidents += detect_n4_incidents(capture.n4)
     if capture.sbi is not None:
         incidents += detect_sbi_incidents(capture.sbi)
     if args.flow is not None:
-        # SBI Incidents have no flow, so this keeps N2 Incidents only.
+        # SBI and N4 Incidents have no flow, so this keeps N2 only.
         incidents = [i for i in incidents if i.get("flow_id") == args.flow]
 
     if not incidents:
@@ -150,7 +153,8 @@ def main(argv: list[str] | None = None) -> int:
         for n, incident in enumerate(incidents, 1):
             where = (f"flow {incident['flow_id']}"
                      if incident.get("flow_id") is not None
-                     else f"SBI {incident['procedure']}")
+                     else f"{incident.get('plane', 'n2').upper()} "
+                          f"{incident['procedure']}")
             print(f"[{n}/{len(incidents)}] {where} "
                   f"{incident['procedure']} ({incident['shape']})",
                   file=sys.stderr)

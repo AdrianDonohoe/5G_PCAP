@@ -82,7 +82,8 @@ def print_pfcp_trace(msgs: list[PfcpMsg]) -> None:
     print("N4 procedures")
     for p in procedures:
         ms = (p.end_ts - p.start_ts) * 1000.0
-        print(f"  PROCEDURE {p.kind}: {p.start_msg} -> {p.end_msg} [{p.outcome}] {ms:.1f} ms")
+        end = p.end_msg or "(no response)"
+        print(f"  PROCEDURE {p.kind}: {p.start_msg} -> {end} [{p.outcome}] {ms:.1f} ms")
 
 
 def to_dict(flows: list[Flow], kpi: KpiResult, unassociated: list[NgapMsg]) -> dict:
@@ -159,6 +160,7 @@ def to_pfcp_dict(msgs: list[PfcpMsg]) -> dict:
                 "seq": m.seq,
                 "seid": m.seid,
                 "cause": m.cause_name,
+                "cause_code": m.cause,
                 "unparsed": m.unparsed,
             }
             for m in msgs
@@ -171,6 +173,8 @@ def to_pfcp_dict(msgs: list[PfcpMsg]) -> dict:
                 "start_msg": p.start_msg,
                 "end_msg": p.end_msg,
                 "outcome": p.outcome,
+                "cause": p.cause,
+                "cause_name": p.cause_name,
                 "duration_ms": (p.end_ts - p.start_ts) * 1000.0,
             }
             for p in procedures

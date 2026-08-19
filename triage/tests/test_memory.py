@@ -62,6 +62,14 @@ def test_accepts_sbi_incident_types(tmp_path):
         ["sbi_udm_timeout", "sbi_nssf_reject"]
 
 
+def test_accepts_n4_incident_types(tmp_path):
+    store = make_store(tmp_path)
+    store.add({**EP, "incident_type": "n4_upf_timeout",
+               "cited_evidence": [{"message": "PFCP Session Establishment Request",
+                                   "cause": None, "ts": 1.0}]})
+    assert [ep.incident_type for ep in store.load()] == ["n4_upf_timeout"]
+
+
 def test_appends_across_instances(tmp_path):
     path = tmp_path / "episodes.jsonl"
     MemoryStore(path).add(EP)

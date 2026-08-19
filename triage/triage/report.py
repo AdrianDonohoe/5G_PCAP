@@ -75,10 +75,11 @@ def _incident_type(episode: Episode | None, raw: dict | None) -> str | None:
 
 
 def _flow_label(result: dict) -> str:
-    """The flow identity for display: "SBI — {procedure}" for SBI-plane
+    """The flow identity for display: "{plane} — {procedure}" for SBI/N4
     results (they carry no N2 flow), "flow {id}" otherwise."""
-    if result.get("plane") == "sbi":
-        return f"SBI — {result.get('procedure') or 'unknown'}"
+    if result.get("plane") in ("sbi", "n4"):
+        return f"{result['plane'].upper()} — " \
+               f"{result.get('procedure') or 'unknown'}"
     return f"flow {result.get('flow_id')}"
 
 
@@ -92,7 +93,7 @@ def _header_lines(result: dict, episode, raw) -> list[str]:
     else:
         lines.append(f"# Post-incident report — {incident_type}")
     lines.append("")
-    if result.get("plane") == "sbi":
+    if result.get("plane") in ("sbi", "n4"):
         lines.append(f"**Flow:** {_flow_label(result)}, "
                      f"{result.get('shape') or 'unknown'}")
     else:
@@ -123,9 +124,9 @@ def _multi_report(results: list[dict], capture: DecodedCapture, graph) -> str:
              "|---|------|------------|--------|----------|"]
     for i, result in enumerate(results, 1):
         episode, raw = _episode_parts(result)
-        # the cell stays the bare id for N2 flows; SBI results name their
-        # service instead
-        cell = (_flow_label(result) if result.get("plane") == "sbi"
+        # the cell stays the bare id for N2 flows; SBI/N4 results name
+        # their service / PFCP procedure instead
+        cell = (_flow_label(result) if result.get("plane") in ("sbi", "n4")
                 else result.get("flow_id"))
         lines.append(f"| {i} | {cell} | "
                      f"{_incident_type(episode, raw) or '—'} | "
@@ -171,6 +172,9 @@ def _sections(result: dict, capture: DecodedCapture, graph,
     if result.get("plane") == "sbi":
         lines += [f"{head} Timeline (SBI)"]
         lines += _sbi_timeline_lines(capture)
+    elif result.get("plane") == "n4":
+        lines += [f"{head} Timeline (N4)"]
+        lines += _n4_timeline_lines(capture)
     else:
         lines += [f"{head} Timeline (flow {flow_id})"]
         lines += _timeline_lines(capture, flow_id)
@@ -317,6 +321,36 @@ def _sbi_timeline_lines(capture: DecodedCapture) -> list[str]:
             status = msg.get("status")
             line += f"-> {status if status is not None else '?'}"
         line += f"  ({msg.get('name') or '?'})"
+        lines.append(line)
+    return lines
+
+
+def _n4_timeline_lines(capture: DecodedCapture) -> list[str]:
+    """The N4 messages in order; each request shows the cause its response
+    carried ("no response" when the capture ended unanswered), each
+    response its cause. The [i] indices match the n4:<i> handles."""
+    msgs = (capture.n4 or {}).get("messages") or []
+    if not msgs:
+        return ["(no N4 messages in this capture)"]
+    # responses by their (src, dst, seq): a request finds its answer on
+    # the flipped tuple under the same sequence number
+    responses = {(m.get("src_ip"), m.get("src_port"),
+                  m.get("dst_ip"), m.get("dst_port"),
+                  m.get("seq")): m
+                 for m in msgs if " Response" in (m.get("name") or "")}
+    lines = []
+    for i, msg in enumerate(msgs, 1):
+        name = msg.get("name") or "?"
+        line = f"[{i}] {fmt_ts(msg.get('ts'))}s  "
+        if " Request" in name:
+            rsp = responses.get((msg.get("dst_ip"), msg.get("dst_port"),
+                                 msg.get("src_ip"), msg.get("src_port"),
+                                 msg.get("seq")))
+            outcome = rsp.get("cause") if rsp is not None else None
+            line += f"{name} -> {outcome or 'no response'}"
+        else:
+            cause = msg.get("cause")
+            line += f"-> {cause if cause is not None else '?'} ({name})"
         lines.append(line)
     return lines
 

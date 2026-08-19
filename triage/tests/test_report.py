@@ -725,6 +725,23 @@ def test_n4_timeline_answered_request():
             "(PFCP Session Establishment Response)") in report
 
 
+def test_n4_timeline_answered_no_cause():
+    # Heartbeat responses carry no Cause IE: the request must render as
+    # answered, not as "no response" (the response is right there).
+    capture = DecodedCapture(n2={}, n4={"messages": [
+        {"ts": 1.0, "src_ip": "10.0.0.1", "dst_ip": "10.0.0.2",
+         "src_port": 8805, "dst_port": 8805,
+         "name": "PFCP Heartbeat Request", "seq": 5,
+         "seid": None, "cause": None, "cause_code": None, "unparsed": None},
+        {"ts": 1.1, "src_ip": "10.0.0.2", "dst_ip": "10.0.0.1",
+         "src_port": 8805, "dst_port": 8805,
+         "name": "PFCP Heartbeat Response", "seq": 5,
+         "seid": None, "cause": None, "cause_code": None, "unparsed": None}]})
+    report = build_report([saved_n4_run()], capture)
+    assert "[1] 1.000s  PFCP Heartbeat Request -> answered" in report
+    assert "[2] 1.100s  -> ? (PFCP Heartbeat Response)" in report
+
+
 def test_n4_evidence_unverified_without_n4_loaded():
     report = build_report([saved_n4_run()], synthetic_capture())
     assert "- [unverified] PFCP Session Establishment Request @ 1.000s" \

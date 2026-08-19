@@ -327,7 +327,8 @@ def _sbi_timeline_lines(capture: DecodedCapture) -> list[str]:
 
 def _n4_timeline_lines(capture: DecodedCapture) -> list[str]:
     """The N4 messages in order; each request shows the cause its response
-    carried ("no response" when the capture ended unanswered), each
+    carried ("no response" when the capture ended unanswered, "answered"
+    when the response carried no cause -- heartbeats carry none), each
     response its cause. The [i] indices match the n4:<i> handles."""
     msgs = (capture.n4 or {}).get("messages") or []
     if not msgs:
@@ -346,8 +347,11 @@ def _n4_timeline_lines(capture: DecodedCapture) -> list[str]:
             rsp = responses.get((msg.get("dst_ip"), msg.get("dst_port"),
                                  msg.get("src_ip"), msg.get("src_port"),
                                  msg.get("seq")))
-            outcome = rsp.get("cause") if rsp is not None else None
-            line += f"{name} -> {outcome or 'no response'}"
+            if rsp is None:
+                outcome = "no response"
+            else:
+                outcome = rsp.get("cause") or "answered"
+            line += f"{name} -> {outcome}"
         else:
             cause = msg.get("cause")
             line += f"-> {cause if cause is not None else '?'} ({name})"

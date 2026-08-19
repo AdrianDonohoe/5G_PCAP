@@ -1,0 +1,26 @@
+# Extends gitleaks' default config. Rules redefined below keep the base
+# rule's regex — only their allowlists are appended (gitleaks merges
+# per-rule allowlists into the base rule; see config/config.go extend()).
+title = "gitleaks config"
+
+[extend]
+useDefault = true
+
+# Open5GS HNet test private keys, byte-identical to the public upstream
+# repo herlesupreeth/docker_open5gs (master/udm/). udm_init.sh copies them
+# into the UDM container at boot; they are pinned so sandbox captures are
+# deterministic. Public test keys — no secret value.
+[[rules]]
+id = "private-key"
+[rules.allowlist]
+description = "Public Open5GS HNet test keys pinned for the sandbox"
+paths = ['''sandbox/core/udm/.*\.key''']
+
+# Corpus of quoted 3GPP spec text; example headers contain the literal
+# string "idempotency-key=" (e.g. line 3588). Not a secret — but every
+# other rule still scans this file.
+[[rules]]
+id = "generic-api-key"
+[rules.allowlist]
+description = "3GPP spec examples quoting header text"
+paths = ['''triage/corpus/chunks\.jsonl''']

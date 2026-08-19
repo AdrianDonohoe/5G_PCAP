@@ -481,14 +481,19 @@ class ExpandSignature(dspy.Signature):
     5GMMAuthenticationFailure), the narrative must explain THAT and cite
     it as evidence too. Pick the incident_type from the wire shape, not
     from cause-name keywords: auth_failure when an AuthenticationFailure
-    message appears; registration_reject for a Registration Reject;
-    registration_timeout when no Registration terminal ever arrived;
+    message appears (a Registration Reject that follows it is the
+    terminal symptom of the same failure: the type is auth_failure and
+    the narrative chains the AuthenticationFailure to the reject);
+    registration_reject for a Registration Reject with no earlier
+    AuthenticationFailure; registration_timeout when no Registration
+    terminal ever arrived;
     pdu_session_reject_slice for 5GMM STATUS cause 91 (DNN not supported
     in the slice) — a reject whose cause NAME merely mentions "slice" is
     NOT the slice type. When the flow's procedure records still read
     accept, the STATUS bounced ONE request (a different slice/DNN than
-    the completed session): say the bounced request was rejected, never
-    that the PDU Session procedure failed; pdu_session_reject_other for
+    the completed session): the narrative must say the STATUS bounced
+    that request — never "the PDU Session was rejected" or "failed",
+    which the accept records contradict; pdu_session_reject_other for
     any other PDU Session REJECT (e.g. cause 67); pdu_session_timeout when NO reject
     exists but cause 90 "Payload was not forwarded" echoes on the UE's
     repeated request with multi-second gaps. On the SBI plane: a request

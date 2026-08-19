@@ -89,6 +89,14 @@ class JudgeSignature(dspy.Signature):
     not penalize it for not naming which network element failed when the
     decode carries no evidence to distinguish them.
 
+    For a mid-flow cause-bearing message (e.g. a 5GMM STATUS with cause
+    91) the procedure records may still read accept: the STATUS bounced
+    one request (a different slice/DNN) while the recorded procedure
+    completed. A hypothesis attributing the rejection to the STATUS'd
+    request does not contradict the accept records — score it on the
+    STATUS message and cause it cites, not against the procedure
+    summary.
+
     For an SBI-plane failure the decode holds HTTP requests and responses
     between network functions: a status >= 400 or an unanswered request IS
     the mechanism. Score the hypothesis on what was requested, what was

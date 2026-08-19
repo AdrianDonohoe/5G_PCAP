@@ -1,10 +1,13 @@
 """PFCP (N4) decoding via pycrate (lenient: failures become unparsed notes).
 
-Request/response pairing uses the PFCP header's sequence number, matching
-Open5GS/UERANSIM's own request-response correlation. This is a standalone N4
-view: it does not attempt to correlate against N2/NGAP flows (nothing in a
-PFCP message carries an NGAP UE ID), so it is reported separately from the
-Flow/KPI vocabulary in CONTEXT.md, which is defined over the NGAP carrier.
+Request/response pairing uses the PFCP header's sequence number within one
+direction (src/dst/seq): each node runs an independent sequence counter, and
+the counters collide across directions on the live wire, so a seq-only key
+would pair a request with the wrong peer's same-seq response. This is a
+standalone N4 view: it does not attempt to correlate against N2/NGAP flows
+(nothing in a PFCP message carries an NGAP UE ID), so it is reported
+separately from the Flow/KPI vocabulary in CONTEXT.md, which is defined over
+the NGAP carrier.
 """
 
 from dataclasses import dataclass, field
@@ -88,36 +91,40 @@ class N4Procedure:
 
 
 def pair_procedures(msgs: list[PfcpMsg]) -> tuple[list[N4Procedure], list[PfcpMsg]]:
-    """Pairs request/response messages by sequence number. Returns
+    """Pairs request/response messages by (src, dst, seq). Returns
     (procedures, unpaired requests). A request never answered by capture
     end is a timeout procedure; retransmissions of a pending request are
     kept as distinct messages (the retry burst is physical evidence of the
     timeout) but pair against the first send."""
-    pending: dict[int, PfcpMsg] = {}
+    pending: dict[tuple, PfcpMsg] = {}
     procedures: list[N4Procedure] = []
     for m in msgs:
         if m.unparsed or m.msg_type is None:
             continue
         if m.msg_type in REQ_KIND:
-            if m.seq not in pending:  # retransmit: keep the first send
-                pending[m.seq] = m
-        elif (m.msg_type - 1) in REQ_KIND and m.seq in pending:
-            req = pending.pop(m.seq)
-            outcome = "unknown"
-            if m.cause is not None:
-                outcome = "accept" if m.cause in (1, 2, 3) else "reject"
-            procedures.append(
-                N4Procedure(
-                    kind=REQ_KIND[m.msg_type - 1],
-                    start_ts=req.ts,
-                    end_ts=m.ts,
-                    start_msg=req.name,
-                    end_msg=m.name,
-                    outcome=outcome,
-                    cause=m.cause,
-                    cause_name=m.cause_name,
+            key = (m.src_ip, m.src_port, m.dst_ip, m.dst_port, m.seq)
+            if key not in pending:  # retransmit: keep the first send
+                pending[key] = m
+        elif (m.msg_type - 1) in REQ_KIND:
+            # a response travels the request's path in reverse
+            key = (m.dst_ip, m.dst_port, m.src_ip, m.src_port, m.seq)
+            if key in pending:
+                req = pending.pop(key)
+                outcome = "unknown"
+                if m.cause is not None:
+                    outcome = "accept" if m.cause in (1, 2, 3) else "reject"
+                procedures.append(
+                    N4Procedure(
+                        kind=REQ_KIND[m.msg_type - 1],
+                        start_ts=req.ts,
+                        end_ts=m.ts,
+                        start_msg=req.name,
+                        end_msg=m.name,
+                        outcome=outcome,
+                        cause=m.cause,
+                        cause_name=m.cause_name,
+                    )
                 )
-            )
     for req in pending.values():
         procedures.append(
             N4Procedure(

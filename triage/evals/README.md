@@ -1,10 +1,11 @@
 # triage evals
 
 The offline eval harness for `type_accuracy` and `diagnosis_quality`
-(CONTEXT.md), over the eight labeled failure-injection fixtures in
-`5gcap/tests/fixtures/` — the two `sbi_*` fixtures join the run only once
-their sandbox pcaps exist. Runs explicitly — never inside the default pytest
-suite, because every fixture run costs real Groq calls (ADR-0002).
+(CONTEXT.md), over the nine labeled failure-injection fixtures in
+`5gcap/tests/fixtures/` — the two `sbi_*` and one `n4_upf_timeout` fixtures
+join the run only once their sandbox pcaps exist. Runs explicitly — never
+inside the default pytest suite, because every fixture run costs real Groq
+calls (ADR-0002).
 
 ## Run
 
@@ -22,7 +23,7 @@ synced.
 
 ## Targets
 
-- `type_accuracy` >= (n-1)/n over the enabled fixtures — 7/8 once all eight
+- `type_accuracy` >= (n-1)/n over the enabled fixtures — 8/9 once all nine
   are enabled — fixture-level mean of exact `incident_type` matches against
   the fixture's `.label.json`.
 - `diagnosis_quality` >= 0.7 — run-level mean of four 0–1 dimension scores
@@ -49,9 +50,10 @@ synced.
 - **Plane filter**: each fixture searches only its own plane's incidents —
   the six N2 fixtures search N2 incidents only, the two `sbi_*` fixtures
   (which decode `<name>.pcap` and `<name>_sbi.pcap`) search SBI incidents
-  only. Without it, `pdu_session_timeout`'s SBI view — which legitimately
-  shows an unanswered Nsmf_PDUSession request — would be searched against an
-  N2 label.
+  only, and `n4_upf_timeout` (which also decodes `<name>_n4.pcap`) searches
+  N4 incidents only. Without it, `pdu_session_timeout`'s SBI view — which
+  legitimately shows an unanswered Nsmf_PDUSession request — would be
+  searched against an N2 label.
 - **The `spec` Action** may trigger the embedding-index build on the first
   eval run (~15–30 min CPU on this VM); afterwards it loads from
   `triage/corpus/cache/`.

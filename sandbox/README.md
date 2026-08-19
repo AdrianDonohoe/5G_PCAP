@@ -63,7 +63,7 @@ the triage eval harness:
 | `pdu_session_timeout` | blackhole SMF SBI port (in-netns iptables) | sm-context create hangs ~11 s, then 5GMM #90, UE retries |
 | `sbi_udm_timeout` | blackhole UDM SBI port (in-netns iptables) | ≥1 unanswered Nudm_* request (AUSF→UDM auth hangs); N2 registration fails after the AMF's SBI deadline |
 | `sbi_nssf_reject` | SMF profile deleted from NRF + SMF paused + NSI retargeted to SST 2 in NSSF config | Nnssf_NSSelection 403, then 5GMM STATUS #147 to the UE |
-| `n4_upf_timeout` | blackhole UPF PFCP port (udp/8805, in-netns iptables) | 4 unanswered Session Establishment Requests per UE attempt, then 5GSM REJECT #38 |
+| `n4_upf_timeout` | blackhole UPF PFCP port (udp/8805, in-netns iptables) | 3 unanswered Session Establishment Requests per UE attempt (2.5 s apart), then 5GSM REJECT #38 at ~7.5 s |
 
 Two shapes differ from the 3GPP textbook on purpose, because they are what
 Open5GS actually emits (verified in the generated fixtures): `auth_failure`
@@ -88,8 +88,10 @@ parameter (`nnssf-handler.c` → `nas_5gs_send_gmm_status()`), truncating
 The `n4_upf_timeout` scenario is the PFCP twin of the SMF blackhole: it
 drops udp/8805 inbound inside the UPF's netns (the upf service already runs
 with NET_ADMIN), so the SMF's Session Establishment Requests go unanswered.
-The SMF retransmits 3× at 2.5 s intervals and gives up ~10 s later; the AMF
-then rejects the PDU session with 5GSM #38 (Network failure) — not 5GMM
+The SMF retransmits at 2.5 s intervals and gives up ~7.5 s after the first
+send (live-verified: 3 sends per attempt — the give-up pre-empts the 3rd
+retransmit); the AMF then rejects the PDU session with 5GSM #38 (Network
+failure) — not 5GMM
 #90, which is the AMF's own SBI deadline in `pdu_session_timeout`. A
 mid-session blackhole is deliberately not a scenario: on a missed heartbeat
 the SMF logs "No UPF available" in a single-UPF core and tears nothing

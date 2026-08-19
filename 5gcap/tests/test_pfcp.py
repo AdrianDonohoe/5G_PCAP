@@ -93,10 +93,12 @@ def test_unanswered_request_is_timeout(tmp_path):
 
 
 def test_retransmit_burst_kept(tmp_path):
-    # Open5GS retransmits an unanswered request 3x (t1 = 2.5 s): 4 identical
-    # frames, same seq. They stay distinct messages (the burst is physical
-    # evidence of the timeout) but pair as one unpaired request / one
-    # timeout procedure anchored at the first send.
+    # Open5GS retransmits an unanswered request at 2.5 s intervals
+    # (live-verified: 3 sends per attempt -- the ~7.5 s give-up pre-empts
+    # the 3rd retransmit); four frames here stress the decoder's shape.
+    # They stay distinct messages (the burst is physical evidence of the
+    # timeout) but pair as one unpaired request / one timeout procedure
+    # anchored at the first send.
     req = _establishment_request(7)
     wrpcap(str(tmp_path / "x.pcap"),
            [_segment(req, ts=t) for t in (0.0, 2.5, 5.0, 7.5)])

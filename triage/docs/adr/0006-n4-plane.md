@@ -72,9 +72,10 @@ failure shapes.
 its netns (`iptables -A INPUT -p udp --dport 8805 -j DROP`; the upf
 service already runs with NET_ADMIN), UE registers and requests a PDU
 session. The blackholed port leaves every SMF Session Establishment
-Request unanswered: Open5GS retransmits 3× at 2.5 s intervals (t1 = 10 s /
-4, source-verified), so each UE attempt leaves a 4-request burst under one
-seq, then gives up ~10 s later and the AMF answers the UE with **PDU
+Request unanswered: Open5GS retransmits at 2.5 s intervals but gives up
+~7.5 s after the first send (live-verified on the first sandbox run — the
+give-up pre-empts the 3rd retransmit), so each UE attempt leaves a
+3-request burst under one seq, then the AMF answers the UE with **PDU
 SESSION ESTABLISHMENT REJECT, 5GSM cause #38 (Network failure)**. The
 cause is #38, NOT 5GMM #90 — #90 is the AMF's own SBI deadline signature
 in `pdu_session_timeout`; here the SMF's N4 give-up produces the reject,

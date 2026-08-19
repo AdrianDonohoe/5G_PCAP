@@ -259,12 +259,16 @@ def test_n4_upf_timeout():
     assert label == {"incident_type": "n4_upf_timeout",
                      "scenario": "n4_upf_timeout"}
     # N4: the blackholed UPF never answers the SMF's Session Establishment
-    # Requests. Open5GS retransmits 3 times (t1 = 2.5 s), so each UE
-    # attempt leaves a 4-request burst under one seq -- kept as distinct
-    # messages (the burst is the timeout's physical signature) but pairing
-    # as one unanswered request / one timeout procedure anchored at the
-    # first send. The association setup retries that start after the first
-    # missed heartbeat (~11 s) are maintenance traffic, never incidents.
+    # Requests. Open5GS retransmits at 2.5 s intervals but gives up ~7.5 s
+    # after the first send (live-verified: the give-up pre-empts the 3rd
+    # retransmit), so each UE attempt leaves a 3-request burst under one
+    # seq -- kept as distinct messages (the burst is the timeout's physical
+    # signature) but pairing as one unanswered request / one timeout
+    # procedure anchored at the first send. The association setup retries
+    # that start after the first missed heartbeat are maintenance traffic,
+    # never incidents. Both nodes run independent seq counters, so the
+    # pairing must be direction-aware or the counters' collisions produce
+    # cross-type pairs.
     procedures, msgs = _n4_procedures("n4_upf_timeout")
     timeouts = [p for p in procedures
                 if p.kind == "session_establishment"
@@ -277,28 +281,31 @@ def test_n4_upf_timeout():
         bursts[m.seq] = bursts.get(m.seq, 0) + 1
     assert len(bursts) == len(timeouts), \
         "each timeout procedure must anchor one request seq"
-    assert max(bursts.values()) >= 4, \
-        "at least one attempt must show its full 4-request retransmit burst"
+    assert max(bursts.values()) >= 3, \
+        "at least one attempt must show its full 3-request retransmit burst"
     assert any(p.kind == "association_setup" and p.outcome == "timeout"
                for p in procedures), \
         "the UPF's silence must also strand the association keepalive"
     # N2: registration completes; the PDU session establishment times out on
     # N4 and the AMF rejects with 5GSM cause #38 (Network failure) -- the
-    # SMF's own ~10 s give-up, NOT 5GMM #90 (that is pdu_session_timeout's
-    # AMF SBI deadline signature). The request-to-reject gap > 5 s is the
-    # signature; a later UE attempt may still be hanging when the capture
-    # window ends, which is fine (the missing terminal message is the
-    # expected outcome of a timeout scenario).
+    # SMF's own ~7.5 s give-up, NOT 5GMM #90 (that is pdu_session_timeout's
+    # AMF SBI deadline signature). Each early attempt carries the ~7.5 s
+    # request-to-reject gap; after ~5 give-ups (~38 s, live-verified) the
+    # SMF's PFCP state degrades and later attempts fail instantly without
+    # ever reaching N4 (no establishment bursts serve them), so the fast
+    # tail is expected and the all() assertion would be wrong.
     flows = _flows("n4_upf_timeout")
     assert flows, "the UE's registration must reach the AMF"
     delayed = []
     for f in flows:
-        req = min((m.ts for m, nas in f.messages
-                   if nas and nas.inner == "5GSMPDUSessionEstabRequest"),
-                  default=None)
-        rej = [m.ts for m, nas in f.messages if nas and nas.cause == 38]
-        if req is not None and rej:
-            delayed.append(min(rej) - req)
+        rej_ts = [m.ts for m, nas in f.messages if nas and nas.cause == 38]
+        for m, nas in f.messages:
+            if nas and nas.inner == "5GSMPDUSessionEstabRequest":
+                later = [t for t in rej_ts if t > m.ts]
+                if later:
+                    delayed.append(min(later) - m.ts)
     assert delayed, "the N4 timeout must end in 5GSM REJECT #38"
-    assert all(d > 5.0 for d in delayed), \
-        "the reject must arrive after the SMF's N4 give-up, not instantly"
+    assert delayed[0] > 5.0, \
+        "the first reject must arrive after the SMF's N4 give-up, not instantly"
+    assert sum(1 for d in delayed if d > 5.0) >= 3, \
+        "several attempts must show the ~7.5 s give-up before the SMF degrades"

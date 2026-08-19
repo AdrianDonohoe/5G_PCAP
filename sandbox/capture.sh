@@ -364,8 +364,9 @@ elif [[ "$SCENARIO" == "n4_upf_timeout" ]]; then
   # Blackholing the UPF's PFCP port (8805/udp) from inside its netns (the
   # upf service already runs privileged with NET_ADMIN -- see
   # core/docker-compose.yml) leaves every SMF Session Establishment Request
-  # unanswered: Open5GS retransmits 3 times at 2.5 s intervals (t1 =
-  # 10 s / 4) and gives up ~10 s later, then the AMF answers the UE with
+  # unanswered: Open5GS retransmits at 2.5 s intervals but gives up ~7.5 s
+  # after the first send (live-verified: 3 sends per attempt -- the give-up
+  # pre-empts the 3rd retransmit), then the AMF answers the UE with
   # PDU SESSION ESTABLISHMENT REJECT, 5GSM cause #38 (Network failure) --
   # NOT 5GMM #90, which is pdu_session_timeout's AMF SBI deadline
   # signature. The UPF's SBI heartbeats keep flowing, so the NRF never

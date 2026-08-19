@@ -160,10 +160,16 @@ def _unassociated_view(i: int, msg: dict) -> str:
 def _n4_listing(capture: DecodedCapture) -> str:
     msgs = capture.n4.get("messages") or []
     lines = [f"N4 (PFCP) messages ({len(msgs)}):"]
+    seen = set()
     for i, msg in enumerate(msgs, 1):
+        key = (msg.get("src_ip"), msg.get("dst_ip"), msg.get("seq"))
+        retransmit = key in seen
+        seen.add(key)
         line = (f"  [{i}] {fmt_ts(msg.get('ts'))}  "
                 f"{msg.get('src_ip') or '?'}->{msg.get('dst_ip') or '?'}  "
                 f"{msg.get('name') or '?'}")
+        if retransmit:
+            line += "  (retransmit)"
         if msg.get("seid") is not None:
             line += f"  seid={msg.get('seid')}"
         if msg.get("cause"):
@@ -174,12 +180,16 @@ def _n4_listing(capture: DecodedCapture) -> str:
     return "\n".join(lines)
 
 
-def _n4_view(i: int, msg: dict) -> str:
+def _n4_view(i: int, msg: dict, msgs: list) -> str:
     lines = [f"Evidence n4:{i}:",
              f"  ts={fmt_ts(msg.get('ts'))}",
              f"  {msg.get('src_ip') or '?'}:{msg.get('src_port')} -> "
              f"{msg.get('dst_ip') or '?'}:{msg.get('dst_port')}",
              f"  name={msg.get('name') or '?'}"]
+    key = (msg.get("src_ip"), msg.get("dst_ip"), msg.get("seq"))
+    if any(m.get("src_ip") == key[0] and m.get("dst_ip") == key[1]
+           and m.get("seq") == key[2] for m in msgs[:i - 1]):
+        lines.append("  retransmit: true")
     if msg.get("seq") is not None:
         lines.append(f"  seq={msg.get('seq')}")
     if msg.get("seid") is not None:
@@ -297,8 +307,9 @@ def inspect_decoded_evidence(capture: DecodedCapture, handle: str) -> str:
         if h.startswith("n4:"):
             if capture.n4 is None:
                 return "inspect_decoded_evidence: no N4 capture loaded"
-            return _dispatch_indexed(capture.n4.get("messages") or [],
-                                     "n4", h, _n4_view)
+            msgs = capture.n4.get("messages") or []
+            return _dispatch_indexed(msgs, "n4", h,
+                                     lambda i, m: _n4_view(i, m, msgs))
         if h.startswith("sbi:"):
             if capture.sbi is None:
                 return "inspect_decoded_evidence: no SBI capture loaded"

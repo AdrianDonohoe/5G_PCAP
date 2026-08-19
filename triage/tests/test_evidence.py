@@ -156,6 +156,32 @@ def test_n4_listing_and_view():
     assert 'cause="Request accepted"' in out
 
 
+def test_n4_retransmit_marked():
+    # A repeated (src, dst, seq) is the same unanswered request re-sent:
+    # the listing and view mark it so evidence cites the first send.
+    capture = DecodedCapture(n2={}, n4={"messages": [
+        {"ts": 1.0, "src_ip": "10.0.0.1", "dst_ip": "10.0.0.2",
+         "src_port": 8805, "dst_port": 8805,
+         "name": "PFCP Session Establishment Request", "seq": 7,
+         "seid": None, "cause": None, "unparsed": None},
+        {"ts": 3.5, "src_ip": "10.0.0.1", "dst_ip": "10.0.0.2",
+         "src_port": 8805, "dst_port": 8805,
+         "name": "PFCP Session Establishment Request", "seq": 7,
+         "seid": None, "cause": None, "unparsed": None},
+        {"ts": 4.0, "src_ip": "10.0.0.2", "dst_ip": "10.0.0.1",
+         "src_port": 8805, "dst_port": 8805,
+         "name": "PFCP Heartbeat Request", "seq": 9,
+         "seid": None, "cause": None, "unparsed": None}]})
+    listing = inspect_decoded_evidence(capture, "n4")
+    lines = listing.splitlines()
+    assert "(retransmit)" not in lines[1]  # the first send is unmarked
+    assert ("[2] 3.500  10.0.0.1->10.0.0.2  "
+            "PFCP Session Establishment Request  (retransmit)") in lines[2]
+    assert "(retransmit)" not in lines[3]  # a fresh seq is not a retransmit
+    assert "retransmit: true" in inspect_decoded_evidence(capture, "n4:2")
+    assert "retransmit" not in inspect_decoded_evidence(capture, "n4:1")
+
+
 def test_no_n4_capture_degrades():
     capture = load_capture(FIXTURES / "golden_n2.json")
     for handle in ("n4", "n4:1"):

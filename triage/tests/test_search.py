@@ -273,8 +273,28 @@ def test_search_exhausts_rollouts_without_finalize():
                       {"flow_id": 1, "procedure": "registration"},
                       expand=never_finalize, evaluate=incomplete,
                       max_rollouts=3)
-    assert result.episode is None
+    assert result.episode is None  # the forced ask got no finalize: honest
     assert result.rollouts == 3
+
+
+def test_search_forces_finalize_on_best_partial_trajectory():
+    def finalize_only_when_forced(objective, trajectory, n):
+        if "Propose exactly one finalize" in trajectory:
+            return [f"finalize {episode_json()}"]
+        return ["inspect flows"]
+
+    def incomplete(objective, trajectory):
+        return {"reward": 0.5, "status": "incomplete", "reflection": ""}
+
+    result = run_lats(mini_capture(),
+                      {"flow_id": 1, "procedure": "registration"},
+                      expand=finalize_only_when_forced, evaluate=incomplete,
+                      max_rollouts=3)
+    assert result.episode is not None
+    assert result.episode.incident_type == "registration_reject"
+    assert result.rollouts == 3  # the rescue is not an extra rollout
+    assert result.trajectory[-1][0].startswith("finalize")
+    assert "finalize accepted" in result.trajectory[-1][1]
 
 
 def test_expand_failure_degrades():
@@ -305,7 +325,7 @@ def test_evaluate_failure_degrades():
 def test_objective_text():
     text = objective_text({"flow_id": 3, "procedure": "PDU Session",
                            "shape": "partial flow (timeout)"})
-    assert "PDU Session procedure failed for flow 3" in text
+    assert "failure incident in flow 3 (PDU Session)" in text
     assert "partial flow (timeout)" in text
     assert "Past similar incidents" not in text  # no memory: unchanged
     for incident_type in ("auth_failure", "registration_reject",

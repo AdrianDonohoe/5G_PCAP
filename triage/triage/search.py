@@ -228,8 +228,13 @@ def objective_text(incident: dict, memory: str = "") -> str:
     """The objective the search runs against, from the Incident description
     plus (optionally) relevant past Episodes retrieved from memory."""
     if incident.get("flow_id") is not None:
-        lines = [f"Explain why the {incident['procedure']} procedure failed "
-                 f"for flow {incident['flow_id']} in this decoded 5G capture."]
+        # Neutral phrasing: a mid-flow cause-bearing message (e.g. a 5GMM
+        # STATUS) can make an incident while the procedure records still
+        # read accept -- claiming "the procedure failed" would prime a
+        # contradiction with the decode the search is about to inspect.
+        lines = [f"Explain the failure incident in flow "
+                 f"{incident['flow_id']} ({incident['procedure']}) in this "
+                 f"decoded 5G capture."]
     else:  # SBI/N4 incidents: no N2 flow; the procedure IS the plane's unit
         plane = {"sbi": "SBI", "n4": "N4"}.get(incident.get("plane"), "SBI")
         lines = [f"Explain why the {incident['procedure']} procedure failed "
@@ -382,6 +387,49 @@ class Tree:
         for child in node.children:
             self._completed(child, acc)
 
+    def _best_partial(self, root: Node) -> Node | None:
+        """The highest-reward evaluated node: the best trajectory so far,
+        completed or not."""
+        nodes = []
+        stack = list(root.children)
+        while stack:
+            node = stack.pop()
+            if node.observation is not None:
+                nodes.append(node)
+            stack.extend(node.children)
+        return max(nodes, key=lambda n: n.reward) if nodes else None
+
+    def _force_finalize(self, root: Node, objective: str) -> list:
+        """One forced finalize on the best partial trajectory.
+
+        Search variance can leave no completed node (no finalize was
+        proposed, or every proposal was rejected as ungrounded); an
+        incident the search did cover deserves a grounded hypothesis over
+        an empty report section. Still a real finalize: grounding applies
+        and the reward comes from evaluating the final trajectory.
+        """
+        best = self._best_partial(root)
+        if best is None:
+            return []
+        try:
+            actions = self.expand(
+                objective,
+                _trajectory_text(best) +
+                "\nPropose exactly one finalize action from this "
+                "trajectory: it must end the search now.", 1)
+        except Exception:
+            return []
+        for action in actions:
+            if action and action.strip().startswith("finalize"):
+                break
+        else:
+            return []
+        child = Node(action=action.strip(), depth=best.depth + 1,
+                     parent=best)
+        best.children.append(child)
+        self._observe_and_evaluate(child, objective)
+        return [child] if child.episode is not None else []
+
     def run(self, objective: str, n_branches: int = 3,
             max_rollouts: int = 10, exit_on_complete: bool = True
             ) -> SearchResult:
@@ -395,6 +443,8 @@ class Tree:
                 break
         done = []
         self._completed(root, done)
+        if not done:
+            done = self._force_finalize(root, objective)
         best = max(done, key=lambda n: n.reward) if done else None
         return SearchResult(episode=best.episode if best else None,
                             reward=best.reward if best else 0.0,
@@ -435,8 +485,11 @@ class ExpandSignature(dspy.Signature):
     registration_timeout when no Registration terminal ever arrived;
     pdu_session_reject_slice for 5GMM STATUS cause 91 (DNN not supported
     in the slice) — a reject whose cause NAME merely mentions "slice" is
-    NOT the slice type; pdu_session_reject_other for any other PDU
-    Session REJECT (e.g. cause 67); pdu_session_timeout when NO reject
+    NOT the slice type. When the flow's procedure records still read
+    accept, the STATUS bounced ONE request (a different slice/DNN than
+    the completed session): say the bounced request was rejected, never
+    that the PDU Session procedure failed; pdu_session_reject_other for
+    any other PDU Session REJECT (e.g. cause 67); pdu_session_timeout when NO reject
     exists but cause 90 "Payload was not forwarded" echoes on the UE's
     repeated request with multi-second gaps. On the SBI plane: a request
     answered with HTTP status >= 400 is an explicit reject (cite the
@@ -448,8 +501,9 @@ class ExpandSignature(dspy.Signature):
     n4_upf_timeout is the type when a session-management PFCP procedure
     (e.g. session_establishment) times out — cite the unanswered PFCP
     Session Establishment Request(s) (the SMF retransmits every ~2.5 s,
-    the burst is the timeout's signature) with cause null and the ts of
-    the first send; a PFCP response carrying a non-accept Cause is an
+    the burst is the timeout's signature, and the listing marks later
+    sends (retransmit)) with cause null and the ts of the first,
+    unmarked send; a PFCP response carrying a non-accept Cause is an
     explicit reject and the numeric cause belongs in the cited evidence's
     cause field. Never repeat an action
     already in the trajectory, and prefer finalize over more
@@ -485,7 +539,10 @@ def _groq_lm():
                            "model fallback)")
     # Groq serves an OpenAI-compatible API; this route works without a
     # dspy Groq provider and keeps the model swappable (ADR-0002).
-    lm = dspy.LM(GROQ[0], api_base=GROQ[1], api_key=key, cache=False)
+    # max_tokens: trajectory transcripts plus finalize JSON overflow the
+    # 4096 default and DSPy silently truncates the response.
+    lm = dspy.LM(GROQ[0], api_base=GROQ[1], api_key=key, cache=False,
+                 max_tokens=8192)
     dspy.configure(lm=lm)
     return lm
 

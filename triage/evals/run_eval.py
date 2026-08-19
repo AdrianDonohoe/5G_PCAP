@@ -132,7 +132,7 @@ def default_judge():
             raise RuntimeError("GROQ_API_KEY is not set (ADR-0002: no local "
                                "model fallback)")
         lm = dspy.LM(JUDGE[0], api_base=JUDGE[1], api_key=key, cache=False,
-                     max_tokens=4096)
+                     max_tokens=8192)
         dspy.configure(lm=lm)
         for attempt in range(2):
             try:

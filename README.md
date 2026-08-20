@@ -7,10 +7,12 @@ procedures with an LLM agent.
 ## Layout
 
 - [`5gcap/`](5gcap/) — the analyzer itself (`5gcap analyze <file.pcap>`),
-  one binary ladder N2 → N4 → SBI. See
+  one binary ladder N2 → N4 → SBI; given all three captures, one merged
+  JSON export correlated by strict key equality (ADR-0007). See
   [`5gcap/README.md`](5gcap/README.md) for usage and v1 scope.
 - [`triage/`](triage/) — LLM-agent root-cause hypothesis generation over
-  5gcap's decode output (LATS search, episodic memory, 3GPP spec graph), a
+  5gcap's decode output (LATS search, episodic memory, 3GPP spec graph; on
+  the merged export, joined SBI/N4 Incidents carry their flow id), a
   deterministic post-incident report writer, and an offline eval harness
   scored against labeled sandbox fixtures. See
   [`triage/README.md`](triage/README.md).

@@ -7,10 +7,10 @@ Domain language (Capture, Flow, Procedure, KPI, Partial Flow) is defined in [`..
 ## Usage
 
 ```
-5gcap analyze <file.pcap> [--json out.json]
+5gcap analyze <file.pcap> [--json out.json] [--sbi sbi.pcap] [--n4 n4.pcap]
 ```
 
-Single pass: decodes procedures, prints a terminal trace, computes KPIs, optionally writes structured JSON. A PFCP-only (N4) or SBI-only capture is detected automatically and prints a message/procedure trace instead — KPIs (attach time, PDU session establishment time) are defined over the NGAP carrier only (see `../CONTEXT.md`), not N4 or SBI.
+Single pass: decodes procedures, prints a terminal trace, computes KPIs, optionally writes structured JSON. A PFCP-only (N4) or SBI-only capture is detected automatically and prints a message/procedure trace instead — KPIs (attach time, PDU session establishment time) are defined over the NGAP carrier only (see `../CONTEXT.md`), not N4 or SBI. Given the N2 capture plus `--sbi` and/or `--n4`, `analyze` correlates the planes by strict key equality — a plaintext SUPI for SBI, GTP tunnel endpoints for N4, never a heuristic (ADR-0007) — and writes one merged JSON: per-flow `sbi_refs`/`n4_refs`, `sbi`/`n4` sections whose message and procedure records carry `flow_id`, and the cross-plane PDU-session latencies.
 
 ## Stack
 
@@ -26,7 +26,7 @@ Single pass: decodes procedures, prints a terminal trace, computes KPIs, optiona
 - **One interface per capture.** Mixed multi-interface files get a warning and lenient best-effort decode.
 - **Capture size budget: ~100 MB** (pure-Python parsing).
 - Decode is lenient: unknown IEs/messages are annotated `unparsed`, never fatal.
-- KPIs: attach time, PDU session establishment time, procedure success rate. Modern 5G protects NAS terminal outcomes, so latency pairing uses the plaintext NAS terminal when visible and falls back to its NGAP carrier (`InitialUEMessage` → `InitialContextSetupRequest`; `PDUSessionResourceSetupRequest` → `Response`). Latency KPIs are computed on complete procedures only; partial flows are flagged. (CryptoMobile-based NAS decryption for lab captures is a planned opt-in enhancement, not v1.)
+- KPIs: attach time, PDU session establishment time, procedure success rate; in the merged export, the cross-plane PDU-session latencies `sbi_to_n4_ms` / `n4_to_n2_ms` / `sbi_to_n2_ms` (each KPI needs its legs present exactly once — a flow missing a leg is excluded from every KPI needing it, nothing is ever estimated). Modern 5G protects NAS terminal outcomes, so latency pairing uses the plaintext NAS terminal when visible and falls back to its NGAP carrier (`InitialUEMessage` → `InitialContextSetupRequest`; `PDUSessionResourceSetupRequest` → `Response`). Latency KPIs are computed on complete procedures only; partial flows are flagged. (CryptoMobile-based NAS decryption for lab captures is a planned opt-in enhancement, not v1.)
 
 ## Development
 

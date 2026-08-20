@@ -55,6 +55,11 @@ triage analyze capture_n2.json [--n4 capture_n4.json] [--sbi capture_sbi.json] \
     [--out results.json] [--report report.md]
 triage report --results results.json capture_n2.json [--n4 capture_n4.json] \
     [--sbi capture_sbi.json]
+
+# or one merged decode (correlated export):
+5gcap analyze capture_n2.pcap --json merged.json \
+    --sbi capture_sbi.pcap --n4 capture_n4.pcap
+triage analyze merged.json [--out results.json] [--report report.md]
 ```
 
 `triage analyze` auto-detects the failed Incidents in the decoded capture
@@ -69,8 +74,10 @@ procedures (a non-accept Cause, or a request never answered) are added as
 their own Incidents — heartbeat/association/node-report traffic is never
 an Incident. With `--sbi`, failed SBI procedures (HTTP
 status >= 400, or a request never answered) are added as their own
-Incidents — both carry no flow_id, and `--flow` filters N2 incidents
-only. Zero Incidents is an empty result with exit
+Incidents. On the merged export, an SBI or N4 Incident whose procedure
+correlates to an N2 flow carries that flow's id (`flow_id`); `--flow`
+then filters every plane — joined plane Incidents in that flow stay in,
+unjoined ones drop out. Zero Incidents is an empty result with exit
 0; exit 1 means the invocation itself failed (e.g. unset `GROQ_API_KEY`).
 
 `triage report` re-renders a saved run (`--out`) as a deterministic
@@ -132,4 +139,8 @@ distinct from the generator), and the post-incident report writer
 the Episode's narrative verbatim, evidence re-verified against the decode,
 spec-graph context, timeline, KPIs, search path, and memory note —
 reachable as `triage report` (offline, re-runnable) and
-`triage analyze --report`).
+`triage analyze --report`), and cross-plane consumption (the merged
+export's embedded sbi/n4 sections auto-load — an explicit plane path wins;
+a joined Incident names its flow in the search objective, `flow:<id>`
+lists the correlated plane messages with their `n4:<i>`/`sbi:<i>` handles,
+and report labels append the flow to joined incidents).

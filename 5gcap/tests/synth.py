@@ -63,6 +63,15 @@ def _copy(x):
     return x
 
 
+def initial_ue_message(nas_pdu: bytes, ran_ue_id: int) -> bytes:
+    """Wire bytes of an InitialUEMessage carrying `nas_pdu`.
+
+    Public so the fuzz smoke's mutation baseline shares the exact
+    composition build_synthetic uses — the two cannot diverge.
+    """
+    return _ngap_bytes(_ngap_template("InitialUEMessage"), nas_pdu, ran_ue_id)
+
+
 def _pkt(ts: float, ngap: bytes, sport: int, dport: int, tsn: int) -> bytes:
     sctp = SCTP(sport=sport, dport=dport)
     sctp /= SCTPChunkData(
@@ -75,7 +84,6 @@ def _pkt(ts: float, ngap: bytes, sport: int, dport: int, tsn: int) -> bytes:
 
 
 def build_synthetic(path: str) -> None:
-    init_ue = _ngap_template("InitialUEMessage")
     down_nas = _ngap_template("DownlinkNASTransport")
     up_nas = _ngap_template("UplinkNASTransport")
 
@@ -87,15 +95,15 @@ def build_synthetic(path: str) -> None:
 
     pkts = [
         # registration #1: complete accept, 100 ms
-        _pkt(0.000, _ngap_bytes(init_ue, nas_reg_req, 1), 45000, 38412, 1001),
+        _pkt(0.000, initial_ue_message(nas_reg_req, 1), 45000, 38412, 1001),
         _pkt(0.100, _ngap_bytes(down_nas, nas_reg_acc, 1), 38412, 45000, 2001),
         # pdu session establishment: complete accept, 50 ms
         _pkt(0.200, _ngap_bytes(up_nas, nas_pdu_req, 1), 45000, 38412, 1002),
         _pkt(0.250, _ngap_bytes(down_nas, nas_pdu_acc, 1), 38412, 45000, 2002),
         # registration #2: reject, 30 ms
-        _pkt(5.000, _ngap_bytes(init_ue, nas_reg_req, 1), 45000, 38412, 1003),
+        _pkt(5.000, initial_ue_message(nas_reg_req, 1), 45000, 38412, 1003),
         _pkt(5.030, _ngap_bytes(down_nas, nas_reg_rej, 1), 38412, 45000, 2003),
         # a retransmitted chunk (same association + TSN as 1003) — must be dropped
-        _pkt(5.010, _ngap_bytes(init_ue, nas_reg_req, 1), 45000, 38412, 1003),
+        _pkt(5.010, initial_ue_message(nas_reg_req, 1), 45000, 38412, 1003),
     ]
     wrpcap(path, pkts)

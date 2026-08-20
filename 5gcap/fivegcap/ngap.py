@@ -32,24 +32,39 @@ def decode(ts: float, assoc: tuple, stream: int, data: bytes,
     try:
         NGAP_D.NGAP_PDU.from_aper(data)
         val = NGAP_D.NGAP_PDU.get_val()
-    except Exception as e:  # lenient: never fatal
+        # val: [kind, {procedureCode, criticality, value: [name, fields]}]
+        # (a PDU with an unknown CHOICE extension can still parse, with
+        # get_val() returning bytes instead of this structure — the .get
+        # below then fails and is caught)
+        kind, body = val[0], val[1]
+        name = body.get("value", [None])[0]
+        if name is not None and name.startswith("_unk_"):
+            # pycrate's placeholder for a procedure code it doesn't know —
+            # not a real decode, so refuse honestly
+            m.unparsed = f"NGAP unknown procedure: {name}"
+            return m
+        proc_code = body.get("procedureCode")
+        fields = body.get("value", [None, {}])[1] or {}
+        ies = {}
+        ran_ue_id = amf_ue_id = None
+        nas_pdu = None
+        for ie in fields.get("protocolIEs", []):
+            ie_name = ie.get("value", [None])[0]
+            ie_val = ie.get("value", [None])[1]
+            ies[ie_name] = ie_val
+            if ie_name == "RAN-UE-NGAP-ID":
+                ran_ue_id = ie_val
+            elif ie_name == "AMF-UE-NGAP-ID":
+                amf_ue_id = ie_val
+            elif ie_name == "NAS-PDU":
+                nas_pdu = _to_bytes(ie_val)
+        # Commit only on full success: a mid-extraction failure leaves the
+        # message refused-only, never half-decoded (decoded XOR refused).
+        m.kind, m.proc_code, m.name = kind, proc_code, name
+        m.ran_ue_id, m.amf_ue_id, m.nas_pdu = ran_ue_id, amf_ue_id, nas_pdu
+        m.ies = ies
+    except Exception as e:  # lenient: never fatal (parse or extraction)
         m.unparsed = f"NGAP decode failed: {e!r}"
-        return m
-    # val: [kind, {procedureCode, criticality, value: [name, fields]}]
-    m.kind, body = val[0], val[1]
-    m.proc_code = body.get("procedureCode")
-    m.name = body.get("value", [None])[0]
-    fields = body.get("value", [None, {}])[1] or {}
-    for ie in fields.get("protocolIEs", []):
-        ie_name = ie.get("value", [None])[0]
-        ie_val = ie.get("value", [None])[1]
-        m.ies[ie_name] = ie_val
-        if ie_name == "RAN-UE-NGAP-ID":
-            m.ran_ue_id = ie_val
-        elif ie_name == "AMF-UE-NGAP-ID":
-            m.amf_ue_id = ie_val
-        elif ie_name == "NAS-PDU":
-            m.nas_pdu = _to_bytes(ie_val)
     return m
 
 

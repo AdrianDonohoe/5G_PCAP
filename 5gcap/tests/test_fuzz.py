@@ -1,0 +1,71 @@
+"""Fuzz smoke: the decoders must never crash, and every input must come
+back either decoded (a name) or honestly refused (an unparsed note) —
+exactly one of the two, never a half-decoded mix.
+
+Seeded stdlib random keeps the sweep deterministic in CI and adds no
+dependencies. Two input classes: pure noise (catches crash-on-parse) and
+mutations of valid encodings (bit flips, truncation, junk insertion —
+catches off-by-one and length bugs noise never reaches).
+"""
+
+import random
+
+import pytest
+from pycrate_mobile.TS24501_FGMM import FGMMRegistrationRequest
+
+from fivegcap.ngap import decode as ngap_decode
+from synth import initial_ue_message
+
+SEED = 0
+RANDOM_PER_DECODER = 200
+MUTATED_PER_DECODER = 50
+
+SRC_IP = "10.0.0.1"
+DST_IP = "10.0.0.2"
+
+
+def _mutate(rng: random.Random, data: bytes) -> bytes:
+    if not data:
+        return b"\x00"
+    kind = rng.randrange(3)
+    if kind == 0:  # bit flips
+        b = bytearray(data)
+        for _ in range(rng.randint(1, 4)):
+            b[rng.randrange(len(b))] ^= 1 << rng.randrange(8)
+        return bytes(b)
+    if kind == 1:  # truncate
+        return data[: rng.randrange(len(data))]
+    # junk insertion mid-buffer (a trailing suffix mostly re-validates:
+    # from_aper tolerates extra bytes after the PDU)
+    pos = rng.randrange(len(data))
+    return data[:pos] + rng.randbytes(rng.randint(1, 32)) + data[pos:]
+
+
+def _assert_honest(msg, label: str) -> None:
+    """The lenient contract: decoded XOR refused. A message with both a
+    name and an unparsed note is a half-decode — the decoder's own bug."""
+    assert (msg.name is not None) != (msg.unparsed is not None), \
+        f"{label}: neither decoded nor refused (or half-decoded): {msg}"
+
+
+def _decode_or_fail(fn, data: bytes, label: str):
+    try:
+        return fn(data)
+    except Exception as e:  # the smoke's whole point: nothing must raise
+        pytest.fail(f"{label} raised on {data.hex()}: {e!r}")
+
+
+def test_ngap_fuzz_smoke():
+    decode = lambda d: ngap_decode(0.0, (38412, 38412), 0, d, SRC_IP, DST_IP)
+    rng = random.Random(SEED)
+    for i in range(RANDOM_PER_DECODER):
+        data = rng.randbytes(rng.randrange(0, 257))
+        _assert_honest(_decode_or_fail(decode, data, f"ngap noise {i}"),
+                       f"ngap noise {i}")
+    # Built lazily (the template loads a fixture pcap — that cost and a
+    # missing-template failure belong to this test, not to collection).
+    valid = initial_ue_message(FGMMRegistrationRequest().to_bytes(), 1)
+    for i in range(MUTATED_PER_DECODER):
+        data = _mutate(rng, valid)
+        _assert_honest(_decode_or_fail(decode, data, f"ngap mutated {i}"),
+                       f"ngap mutated {i}")

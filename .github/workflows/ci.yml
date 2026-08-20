@@ -27,6 +27,6 @@ jobs:
         working-directory: triage
         run: uv sync && uv run pytest tests/
       - name: Secret scan
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

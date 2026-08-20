@@ -1,0 +1,21 @@
+version: 2
+updates:
+  # Weekly version updates for the pinned Actions (gitleaks-action@v2,
+  # setup-uv@v5); searched under .github/workflows.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # The two uv-managed packages. Dependabot regenerates uv.lock and bumps
+  # the pyproject.toml requirement lower bounds (the default strategy:
+  # these are applications, not libraries).
+  - package-ecosystem: "uv"
+    directory: "/5gcap"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "uv"
+    directory: "/triage"
+    schedule:
+      interval: "weekly"

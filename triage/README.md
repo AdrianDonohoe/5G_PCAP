@@ -33,7 +33,8 @@ invocation, decision by decision, is in
 - `tests/` — pytest suite
 - `evals/` — the offline eval harness (`run_eval.py`: type_accuracy +
   diagnosis_quality over the labeled fixtures; real Groq calls, run
-  explicitly, never inside pytest)
+  explicitly, never inside pytest); the latest committed run is recorded
+  in [RESULTS.md](./RESULTS.md)
 - `scripts/build_corpus.py` — one-time 3GPP spec fetch/chunk (see Development)
 - `corpus/` — committed chunks.jsonl + manifest.json for the
   query_3gpp_spec tool; `corpus/cache/` (zips, embedding index, and the

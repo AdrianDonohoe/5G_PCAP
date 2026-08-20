@@ -7,8 +7,9 @@ like the rest of 5gcap: failures become unparsed notes, never fatal.
 Request/response pairing uses the HTTP/2 stream id within one TCP
 connection, matching Open5GS's own request-response correlation. Like the
 PFCP module, this is a standalone plane view: SBI messages carry no NGAP UE
-IDs, so nothing is correlated against N2 flows (the Flow/KPI vocabulary in
-CONTEXT.md is defined over the NGAP carrier).
+IDs. Cross-plane correlation happens elsewhere (correlate.py) by strict key
+equality — a plaintext SUPI here against the flows' declared SUPIs — never
+a heuristic: a link exists or it doesn't.
 
 Two passive h2 connections per TCP connection decode the traffic: the
 request side (built server-side, fed the client's bytes including the HTTP/2

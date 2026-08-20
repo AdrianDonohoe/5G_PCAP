@@ -4,10 +4,10 @@ Request/response pairing uses the PFCP header's sequence number within one
 direction (src/dst/seq): each node runs an independent sequence counter, and
 the counters collide across directions on the live wire, so a seq-only key
 would pair a request with the wrong peer's same-seq response. This is a
-standalone N4 view: it does not attempt to correlate against N2/NGAP flows
-(nothing in a PFCP message carries an NGAP UE ID), so it is reported
-separately from the Flow/KPI vocabulary in CONTEXT.md, which is defined over
-the NGAP carrier.
+standalone N4 view: nothing in a PFCP message carries an NGAP UE ID.
+Cross-plane correlation happens elsewhere (correlate.py) by strict key
+equality — the GTP tunnel endpoints here against the flows' declared
+endpoints — never a heuristic: a link exists or it doesn't.
 """
 
 from dataclasses import dataclass, field

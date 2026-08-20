@@ -8,9 +8,11 @@ plaintext; `decode` strips the 7-byte header and parses the inner NAS.
 from pycrate_mobile.TS24501_FGMM import (
     FGMMRegistrationAccept,
     FGMMRegistrationReject,
+    FGMMRegistrationRequest,
     FGMMSecurityModeCommand,
 )
 from pycrate_mobile.TS24501_FGSM import FGSMPDUSessionEstabReject
+from pycrate_mobile.TS24501_IE import FGSID
 
 from fivegcap.nas import decode
 
@@ -64,3 +66,45 @@ def test_ea0_protected_payload_is_plaintext():
     nas = decode(wrapped, ciph_algo=2)
     assert nas.inner is None
     assert "5G-EA2" in nas.unparsed
+
+
+def _reg_with_5gsid(vals: list) -> bytes:
+    """A RegistrationRequest whose 5GS mobile identity IE carries `vals`
+    (the FGSID envelope's set_val list shape)."""
+    fgsid = FGSID()
+    fgsid.set_val(vals)
+    reg = FGMMRegistrationRequest()
+    reg[3]["V"].set_val(fgsid.to_bytes())
+    return reg.to_bytes()
+
+
+def test_null_scheme_suci_normalizes_to_supi():
+    # ProtSchemeID 0 = null: the "output" is the plaintext BCD MSIN, so the
+    # SUCI is plaintext SUPI (PLMN 999-70 + MSIN 0000000002) and joins.
+    suci = [0, 0, 0, 1, [b"\x99\xf9\x07", b"\x00\x00", 0, 0, 0,
+                          b"\x00\x00\x00\x00 "]]
+    nas = decode(_reg_with_5gsid(suci))
+    assert nas.name == "5GMMRegistrationRequest"
+    assert nas.supi == "999700000000002"
+    assert nas.guti is None
+    assert nas.unparsed is None
+
+
+def test_protected_suci_yields_no_supi():
+    # ProtSchemeID 1 (ECIES profile A): the output is ciphertext — never
+    # guessed, never joined.
+    suci = [0, 0, 0, 1, [b"\x99\xf9\x07", b"\x00\x00", 0, 1, 0,
+                          [b"\xaa" * 32, b"\xbb" * 8, b"\xcc" * 8]]]
+    nas = decode(_reg_with_5gsid(suci))
+    assert nas.name == "5GMMRegistrationRequest"
+    assert nas.supi is None and nas.guti is None
+    assert nas.unparsed is None
+
+
+def test_guti_extracted_as_evidence():
+    # 5G-GUTI: honest evidence, never a join key.
+    guti = [0xF, 0, 2, b"\x99\xf9\x07", 1, 63, 21, 0xDEADBEEF]
+    nas = decode(_reg_with_5gsid(guti))
+    assert nas.name == "5GMMRegistrationRequest"
+    assert nas.guti == "99970-1-63-21-3735928559"
+    assert nas.supi is None

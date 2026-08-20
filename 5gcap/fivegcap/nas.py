@@ -26,6 +26,8 @@ class NasMsg:
     cause_name: str | None = None  # e.g. "5GS services not allowed"
     ciph_algo: int | None = None   # selected by the SMC (0 = 5G-EA0 null)
     integ_algo: int | None = None
+    supi: str | None = None   # plaintext SUPI from a null-scheme SUCI
+    guti: str | None = None   # 5G-GUTI (evidence, never a join key)
     unparsed: str | None = None
 
 
@@ -122,6 +124,8 @@ def _fill_from(msg: NasMsg, parsed) -> None:
                 if isinstance(v, int):
                     msg.cause = v
                     msg.cause_name = CAUSE_DICTS[ie_name].get(v)
+        elif ie_name == "5GSID":
+            _extract_5gsid(msg, ie.get_val())
         elif ie_name == "PayloadContainer":
             # 5GMM UL/DL NAS transport: pycrate (inner=True) already parsed
             # the container into a nested 5GSM message, replacing the raw 'V'
@@ -138,3 +142,38 @@ def _fill_from(msg: NasMsg, parsed) -> None:
     if container is not None:
         msg.inner = container._name
         _fill_from(msg, container)
+
+
+def _bcd_digits(b: bytes) -> str:
+    """BCD digits, least-significant nibble first per byte, 0xF nibbles
+    (padding and the PLMN's 2-digit-MNC flag) dropped."""
+    return "".join(
+        str(nib)
+        for byte in b
+        for nib in (byte & 0x0F, byte >> 4)
+        if nib != 0xF
+    )
+
+
+def _extract_5gsid(msg: NasMsg, val) -> None:
+    """Extract the 5GS mobile identity, leniently.
+
+    A null-scheme SUCI is plaintext SUPI (PLMN + BCD MSIN) and joins; a
+    protected SUCI yields nothing — no guessing. A 5G-GUTI is evidence,
+    never a join key.
+    """
+    try:
+        content = val[1] if isinstance(val, list) and len(val) > 1 else val
+        if not isinstance(content, list):
+            return
+        if len(content) == 5 and content[3] == 1:  # SUCI (Type at index 3)
+            suci = content[4]
+            if (isinstance(suci, list) and len(suci) >= 6
+                    and suci[3] == 0):  # ProtSchemeID 0 = null
+                msg.supi = _bcd_digits(suci[0]) + _bcd_digits(suci[5])
+        elif len(content) == 8 and content[2] == 2:  # 5G-GUTI (Type at index 2)
+            plmn = _bcd_digits(content[3])
+            region, setid, ptr, tmsi = content[4:8]
+            msg.guti = f"{plmn}-{region}-{setid}-{ptr}-{tmsi}"
+    except Exception:
+        return

@@ -4,16 +4,19 @@ import argparse
 import sys
 
 from .capture import read_capture, read_pfcp_capture
+from .correlate import correlate
 from .ngap import decode as ngap_decode
 from .pfcp import decode as pfcp_decode
 from .sbi import read_sbi_capture
 from .flow import build_flows
 from .kpi import compute
-from .output import (print_trace, write_json, print_pfcp_trace,
-                     write_pfcp_json, print_sbi_trace, write_sbi_json)
+from .output import (print_trace, write_json, write_merged_json,
+                     print_pfcp_trace, write_pfcp_json, print_sbi_trace,
+                     write_sbi_json)
 
 
-def analyze(path: str, json_out: str | None) -> int:
+def analyze(path: str, json_out: str | None,
+            sbi_path: str | None = None) -> int:
     raw = read_capture(path)
     if raw:
         msgs = [ngap_decode(m.ts, m.assoc, m.stream, m.data, m.src_ip, m.dst_ip)
@@ -21,6 +24,15 @@ def analyze(path: str, json_out: str | None) -> int:
         flows, unassociated = build_flows(msgs)
         kpi = compute(flows)
         print_trace(flows, kpi, unassociated)
+        if sbi_path:
+            # Merged run: the SBI capture is the same run's other plane.
+            sbi_msgs = read_sbi_capture(sbi_path)
+            corr = correlate(flows, sbi_msgs)
+            if json_out:
+                write_merged_json(flows, kpi, unassociated, corr, sbi_msgs,
+                                  json_out)
+                print(f"JSON written to {json_out}")
+            return 0
         if json_out:
             write_json(flows, kpi, unassociated, json_out)
             print(f"JSON written to {json_out}")
@@ -51,9 +63,12 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("analyze", help="decode a capture and compute KPIs")
     p.add_argument("capture", help="path to a .pcap/.pcapng file")
     p.add_argument("--json", dest="json_out", default=None, help="write structured JSON to this path")
+    p.add_argument("--sbi", dest="sbi_path", default=None,
+                   help="path to an SBI (HTTP/2) capture of the same run; "
+                        "correlated and merged into the JSON export")
     args = ap.parse_args(argv if argv is not None else sys.argv[1:])
     if args.cmd == "analyze":
-        return analyze(args.capture, args.json_out)
+        return analyze(args.capture, args.json_out, sbi_path=args.sbi_path)
     return 1
 
 

@@ -8,6 +8,7 @@ outcomes rather than exact latencies, which vary between runs.
 from pathlib import Path
 
 from fivegcap.capture import read_capture, read_pfcp_capture
+from fivegcap.correlate import correlate
 from fivegcap.flow import build_flows
 from fivegcap.kpi import compute
 from fivegcap.ngap import decode as ngap_decode
@@ -112,3 +113,55 @@ def test_golden_captures_have_zero_unparsed():
     for m in read_sbi_capture(str(SBI_FIXTURE)):
         assert m.unparsed is None or m.unparsed.startswith(MIDSTREAM_SBI_NOTE), \
             f"SBI undecoded in sandbox_sbi.pcap: {m}"
+
+
+def test_sbi_correlates_by_supi():
+    """Golden merged run: the three UEs' IMSIs form a bijection with the
+    three flows, the body-only sm-contexts creates join, and unparsed
+    (midstream) SBI messages never link."""
+    msgs = [ngap_decode(m.ts, m.assoc, m.stream, m.data, m.src_ip, m.dst_ip)
+            for m in read_capture(str(N2_FIXTURE))]
+    flows, _ = build_flows(msgs)
+    sbi_msgs = read_sbi_capture(str(SBI_FIXTURE))
+    corr = correlate(flows, sbi_msgs=sbi_msgs)
+
+    # Unparsed (midstream) SBI messages never join.
+    for i, m in enumerate(sbi_msgs):
+        if m.unparsed is not None:
+            assert corr.sbi_flow[i] is None, f"unparsed message joined: {m}"
+
+    # Every IMSI joins exactly one flow, and every flow is claimed by one
+    # IMSI (the sandbox has three UEs, one flow each — a bijection).
+    imsi_set = {"999700000000001", "999700000000002", "999700000000003"}
+    imsi_flows: dict[str, set[int]] = {}
+    for i, m in enumerate(sbi_msgs):
+        fid = corr.sbi_flow[i]
+        if fid is None:
+            continue
+        assert m.unparsed is None, "refused message linked"
+        for imsi in imsi_set:
+            if m.path and f"imsi-{imsi}" in m.path:
+                imsi_flows.setdefault(imsi, set()).add(fid)
+    assert set(imsi_flows) == imsi_set
+    assert {fid for fids in imsi_flows.values() for fid in fids} == \
+        {f.flow_id for f in flows}
+    for imsi, fids in imsi_flows.items():
+        assert len(fids) == 1, f"{imsi} claimed by flows {fids}"
+
+    # Each flow's refs include its sm-contexts create — the create whose
+    # identity lives only in the request body — and are sorted by index.
+    for f in flows:
+        refs = corr.flow_sbi_refs.get(f.flow_id, [])
+        assert refs, f"flow {f.flow_id} has no SBI links"
+        assert refs == sorted(refs)
+        paths = {sbi_msgs[i].path for i in refs
+                 if sbi_msgs[i].direction == "request"}
+        assert "/nsmf-pdusession/v1/sm-contexts" in paths, \
+            f"flow {f.flow_id} missing its session create: {paths}"
+
+    # The null-scheme suci- requests link and normalize, one flow each.
+    suci_links = [(m.path, corr.sbi_flow[i])
+                  for i, m in enumerate(sbi_msgs)
+                  if m.path and "/suci-" in m.path]
+    assert len(suci_links) == 3
+    assert len({fid for _, fid in suci_links}) == 3

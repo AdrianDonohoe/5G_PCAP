@@ -67,6 +67,7 @@ class SbiMsg:
     status: int | None = None
     body_len: int = 0
     name: str | None = None      # SBI service name, e.g. "Nudm_UEAuthentication"
+    supi: str | None = None      # the SUPI the request declares (path or body)
     problem_title: str | None = None
     problem_cause: str | None = None
     unparsed: str | None = None
@@ -90,6 +91,48 @@ def _parse_problem_details(body: bytes, msg: SbiMsg) -> None:
             msg.problem_title = str(data["title"])
         if data.get("cause"):
             msg.problem_cause = str(data["cause"])
+
+
+def _supi_from_path(path: str) -> str | None:
+    """The SUPI a request path declares: `imsi-<digits>`, or a null-scheme
+    `suci-…` form whose plaintext MSIN normalizes to the SUPI. A protected
+    (non-null) SUCI yields nothing."""
+    m = re.search(r"imsi-(\d{14,15})", path)
+    if m:
+        return m.group(1)
+    m = re.search(r"suci-(\d+)-(\d{3})-(\d{2,3})-(\d+)-(\d+)-(\d+)-([0-9a-fA-F]+)",
+                  path)
+    if m and m.group(1) == "0" and m.group(5) == "0":
+        return m.group(2) + m.group(3) + m.group(7)
+    return None
+
+
+def _supi_from_body(body: bytes) -> str | None:
+    """The SUPI a request's body declares in a "supi" field — either the
+    body's own JSON or the first (JSON) part of a multipart body (the
+    sm-contexts create has no identity in its path and sends its JSON and
+    the N1 container as multipart/related)."""
+    if not body:
+        return None
+    stripped = body.lstrip()
+    if stripped.startswith(b"--"):
+        # multipart: the first part is the JSON, the rest is the N1/N2
+        # payload container.
+        boundary = stripped.split(b"\r\n", 1)[0]
+        end = stripped.find(b"\r\n" + boundary, len(boundary))
+        if end < 0:
+            return None
+        body = stripped[len(boundary):end].partition(b"\r\n\r\n")[2].strip()
+    try:
+        data = json.loads(body)
+    except Exception:
+        return None
+    sup = data.get("supi") if isinstance(data, dict) else None
+    if not isinstance(sup, str):
+        return None
+    if sup.startswith("imsi-"):
+        sup = sup[len("imsi-"):]
+    return sup if re.fullmatch(r"\d{14,15}", sup) else None
 
 
 def _decode_connection(conn: frozenset,
@@ -207,6 +250,17 @@ def _decode_connection(conn: frozenset,
                         # honest unparsed note, not a half-decoded mix.
                         rec.name = None
                         rec.unparsed = "stream reset"
+    # Identity post-pass: a request's declared SUPI is whatever its path
+    # and body agree on. Two different declarations, or a refused stream,
+    # yield nothing — a message that can't speak with one voice never joins.
+    for rec in requests.values():
+        if rec.unparsed is not None:
+            continue
+        declared = {s for s in (_supi_from_path(rec.path or ""),
+                                _supi_from_body(bytes(bodies.get(
+                                    (rec.stream_id, "request"), b""))))
+                    if s}
+        rec.supi = declared.pop() if len(declared) == 1 else None
     return msgs
 
 
@@ -259,6 +313,8 @@ class SbiProcedure:
     end_msg: str | None
     outcome: str  # "accept" / "reject" / "timeout"
     status: int | None
+    conn: frozenset | None = None  # internal: pairing key of the request
+    stream_id: int | None = None   # internal: stream of the request
 
 
 def pair_procedures(msgs: list[SbiMsg]) -> tuple[list[SbiProcedure], int]:
@@ -285,7 +341,8 @@ def pair_procedures(msgs: list[SbiMsg]) -> tuple[list[SbiProcedure], int]:
                 procedures.append(SbiProcedure(
                     kind=req.name or "unknown", start_ts=req.ts, end_ts=req.ts,
                     start_msg=start_msg, end_msg=None,
-                    outcome="timeout", status=None))
+                    outcome="timeout", status=None,
+                    conn=req.conn, stream_id=req.stream_id))
                 unpaired += 1
             else:
                 outcome = ("accept"
@@ -293,6 +350,7 @@ def pair_procedures(msgs: list[SbiMsg]) -> tuple[list[SbiProcedure], int]:
                 procedures.append(SbiProcedure(
                     kind=req.name or "unknown", start_ts=req.ts, end_ts=rsp.ts,
                     start_msg=start_msg, end_msg=str(rsp.status),
-                    outcome=outcome, status=rsp.status))
+                    outcome=outcome, status=rsp.status,
+                    conn=req.conn, stream_id=req.stream_id))
     procedures.sort(key=lambda p: p.start_ts)
     return procedures, unpaired

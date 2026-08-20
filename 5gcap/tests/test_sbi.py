@@ -218,6 +218,97 @@ def test_response_after_client_reset_degrades(tmp_path):
     assert rsp.name is None and rsp.unparsed
 
 
+def test_supi_from_imsi_path(tmp_path):
+    c2s, s2c = _exchange(
+        _headers("/nudm-sdm/v2/imsi-999700000000001/sdm-subscriptions"),
+        status=200)
+    wrpcap(str(tmp_path / "x.pcap"),
+           [_segment(CLIENT, 40000, SERVER, SBI_PORT, c2s),
+            _segment(SERVER, SBI_PORT, CLIENT, 40000, s2c)])
+    msgs = read_sbi_capture(str(tmp_path / "x.pcap"))
+    req = next(m for m in msgs if m.direction == "request")
+    rsp = next(m for m in msgs if m.direction == "response")
+    assert req.supi == "999700000000001"
+    assert rsp.supi is None
+
+
+def test_supi_from_null_scheme_suci_path(tmp_path):
+    c2s, s2c = _exchange(
+        _headers("/nudm-ueau/v1/suci-0-999-70-0000-0-0-0000000001/"
+                 "security-information/generate-auth-data"), status=200)
+    wrpcap(str(tmp_path / "x.pcap"),
+           [_segment(CLIENT, 40000, SERVER, SBI_PORT, c2s),
+            _segment(SERVER, SBI_PORT, CLIENT, 40000, s2c)])
+    req = next(m for m in read_sbi_capture(str(tmp_path / "x.pcap"))
+               if m.direction == "request")
+    assert req.supi == "999700000000001"
+    assert req.name is not None
+
+
+def test_protected_suci_path_yields_no_supi(tmp_path):
+    c2s, s2c = _exchange(
+        _headers("/nudm-ueau/v1/suci-0-999-70-0000-1-0-abc123def/"
+                 "security-information/generate-auth-data"), status=200)
+    wrpcap(str(tmp_path / "x.pcap"),
+           [_segment(CLIENT, 40000, SERVER, SBI_PORT, c2s),
+            _segment(SERVER, SBI_PORT, CLIENT, 40000, s2c)])
+    req = next(m for m in read_sbi_capture(str(tmp_path / "x.pcap"))
+               if m.direction == "request")
+    assert req.supi is None
+    assert req.name is not None  # decoded, not refused
+
+
+def test_supi_from_request_body(tmp_path):
+    # The sm-contexts create has no identity in its path: the JSON body's
+    # "supi" is the only exact signal.
+    body = b'{"supi": "imsi-999700000000001", "dnn": "internet"}'
+    c2s, s2c = _exchange(_headers("/nsmf-pdusession/v1/sm-contexts"),
+                         request_body=body, status=201)
+    wrpcap(str(tmp_path / "x.pcap"),
+           [_segment(CLIENT, 40000, SERVER, SBI_PORT, c2s),
+            _segment(SERVER, SBI_PORT, CLIENT, 40000, s2c)])
+    req = next(m for m in read_sbi_capture(str(tmp_path / "x.pcap"))
+               if m.direction == "request")
+    assert req.supi == "999700000000001"
+
+
+def test_conflicting_identities_yield_no_supi(tmp_path):
+    # Path and body declare different identities: the message is not
+    # trustworthy as a join key — no link.
+    c2s, s2c = _exchange(
+        _headers("/nudm-sdm/v2/imsi-999700000000001/x"),
+        request_body=b'{"supi": "imsi-999700000000002"}', status=200)
+    wrpcap(str(tmp_path / "x.pcap"),
+           [_segment(CLIENT, 40000, SERVER, SBI_PORT, c2s),
+            _segment(SERVER, SBI_PORT, CLIENT, 40000, s2c)])
+    req = next(m for m in read_sbi_capture(str(tmp_path / "x.pcap"))
+               if m.direction == "request")
+    assert req.supi is None
+
+
+def test_reset_request_yields_no_supi(tmp_path):
+    client = H2Connection(H2Configuration(client_side=True))
+    client.initiate_connection()
+    preface = client.data_to_send()
+    client.send_headers(1, _headers("/nudm-sdm/v2/imsi-999700000000001/x"),
+                        end_stream=False)
+    headers_wire = client.data_to_send()
+    client.reset_stream(1)
+    reset_wire = client.data_to_send()
+    c2s = preface + headers_wire + reset_wire
+    server = H2Connection(H2Configuration(client_side=False))
+    server.receive_data(preface + headers_wire)
+    server.send_headers(1, [(":status", "200")], end_stream=True)
+    s2c = server.data_to_send()
+    wrpcap(str(tmp_path / "x.pcap"),
+           [_segment(CLIENT, 40000, SERVER, SBI_PORT, c2s),
+            _segment(SERVER, SBI_PORT, CLIENT, 40000, s2c)])
+    req = next(m for m in read_sbi_capture(str(tmp_path / "x.pcap"))
+               if m.direction == "request")
+    assert req.unparsed == "stream reset"
+    assert req.supi is None
+
+
 def test_service_name_prefixes_and_fallback():
     assert service_name("/nudm-ueau/v1/x") == "Nudm_UEAuthentication"
     assert service_name("/nudm-uecm/v1/x") == "Nudm_UECM"

@@ -2,6 +2,7 @@
 
 import json
 
+from .correlate import Correlation
 from .flow import Flow
 from .kpi import KpiResult
 from .ngap import NgapMsg
@@ -211,46 +212,81 @@ def print_sbi_trace(msgs: list[SbiMsg]) -> None:
         print(f"  PROCEDURE {p.kind}: {p.start_msg} -> {end} [{p.outcome}] {ms:.1f} ms")
 
 
-def to_sbi_dict(msgs: list[SbiMsg]) -> dict:
+def to_sbi_dict(msgs: list[SbiMsg],
+                flow_of: dict[int, int | None] | None = None) -> dict:
+    """SBI plane export. With `flow_of` (message index -> flow id) every
+    message and procedure record gains a `flow_id`; without it the export
+    is exactly the single-plane one."""
     procedures, unpaired = pair_sbi_procedures(msgs)
-    return {
-        "messages": [
-            {
-                "ts": m.ts,
-                "src_ip": m.src_ip,
-                "dst_ip": m.dst_ip,
-                "src_port": m.src_port,
-                "dst_port": m.dst_port,
-                "stream_id": m.stream_id,
-                "direction": m.direction,
-                "method": m.method,
-                "path": m.path,
-                "status": m.status,
-                "body_len": m.body_len,
-                "service": m.name,
-                "name": m.name,
-                "problem_title": m.problem_title,
-                "problem_cause": m.problem_cause,
-                "unparsed": m.unparsed,
-            }
-            for m in msgs
-        ],
-        "procedures": [
-            {
-                "kind": p.kind,
-                "start_ts": p.start_ts,
-                "end_ts": p.end_ts,
-                "start_msg": p.start_msg,
-                "end_msg": p.end_msg,
-                "outcome": p.outcome,
-                "status": p.status,
-            }
-            for p in procedures
-        ],
-        "unpaired_requests": unpaired,
-    }
+    messages = [
+        {
+            "ts": m.ts,
+            "src_ip": m.src_ip,
+            "dst_ip": m.dst_ip,
+            "src_port": m.src_port,
+            "dst_port": m.dst_port,
+            "stream_id": m.stream_id,
+            "direction": m.direction,
+            "method": m.method,
+            "path": m.path,
+            "status": m.status,
+            "body_len": m.body_len,
+            "service": m.name,
+            "name": m.name,
+            "problem_title": m.problem_title,
+            "problem_cause": m.problem_cause,
+            "unparsed": m.unparsed,
+        }
+        for m in msgs
+    ]
+    proc_dicts = [
+        {
+            "kind": p.kind,
+            "start_ts": p.start_ts,
+            "end_ts": p.end_ts,
+            "start_msg": p.start_msg,
+            "end_msg": p.end_msg,
+            "outcome": p.outcome,
+            "status": p.status,
+        }
+        for p in procedures
+    ]
+    if flow_of is not None:
+        # A procedure inherits its request's flow via the exact (conn,
+        # stream) pairing; procedures of refused or unjoined requests
+        # carry flow_id null.
+        req_idx = {(m.conn, m.stream_id): i for i, m in enumerate(msgs)
+                   if m.direction == "request" and m.conn is not None}
+        for i, md in enumerate(messages):
+            md["flow_id"] = flow_of[i]
+        for pd, p in zip(proc_dicts, procedures):
+            key = (p.conn, p.stream_id)
+            pd["flow_id"] = flow_of[req_idx[key]] if key in req_idx else None
+    return {"messages": messages, "procedures": proc_dicts,
+            "unpaired_requests": unpaired}
 
 
 def write_sbi_json(msgs: list[SbiMsg], path: str) -> None:
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(to_sbi_dict(msgs), fh, indent=2)
+
+
+def to_merged_dict(flows: list[Flow], kpi: KpiResult,
+                   unassociated: list[NgapMsg], corr: Correlation,
+                   sbi_msgs: list[SbiMsg]) -> dict:
+    """Merged N2 + SBI export: the single-plane dict, each flow's
+    `sbi_refs` message indexes, and the SBI section whose message and
+    procedure records carry the correlated `flow_id`."""
+    out = to_dict(flows, kpi, unassociated)
+    for fd in out["flows"]:
+        fd["sbi_refs"] = corr.flow_sbi_refs.get(fd["flow_id"], [])
+    out["sbi"] = to_sbi_dict(sbi_msgs, flow_of=corr.sbi_flow)
+    return out
+
+
+def write_merged_json(flows: list[Flow], kpi: KpiResult,
+                      unassociated: list[NgapMsg], corr: Correlation,
+                      sbi_msgs: list[SbiMsg], path: str) -> None:
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(to_merged_dict(flows, kpi, unassociated, corr, sbi_msgs),
+                  fh, indent=2)

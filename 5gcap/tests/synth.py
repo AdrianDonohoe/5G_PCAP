@@ -72,6 +72,12 @@ def initial_ue_message(nas_pdu: bytes, ran_ue_id: int) -> bytes:
     return _ngap_bytes(_ngap_template("InitialUEMessage"), nas_pdu, ran_ue_id)
 
 
+def downlink_nas_transport(nas_pdu: bytes, ran_ue_id: int) -> bytes:
+    """Wire bytes of a DownlinkNASTransport carrying `nas_pdu` (the
+    initial_ue_message counterpart)."""
+    return _ngap_bytes(_ngap_template("DownlinkNASTransport"), nas_pdu, ran_ue_id)
+
+
 def _pkt(ts: float, ngap: bytes, sport: int, dport: int, tsn: int) -> bytes:
     sctp = SCTP(sport=sport, dport=dport)
     sctp /= SCTPChunkData(

@@ -8,7 +8,12 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      # Full history: gitleaks-action v2 scans every pushed commit
+      # (first-commit^..head); a depth-1 clone lacks the base and the
+      # scan fails with "unknown revision".
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:

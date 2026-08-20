@@ -12,9 +12,11 @@ import random
 
 import pytest
 from pycrate_mobile.TS24501_FGMM import FGMMRegistrationRequest
+from pycrate_mobile.TS29244_PFCP import PFCPSessionEstablishmentReq
 
 from fivegcap.nas import decode as nas_decode
 from fivegcap.ngap import decode as ngap_decode
+from fivegcap.pfcp import decode as pfcp_decode
 from synth import initial_ue_message
 
 SEED = 0
@@ -94,3 +96,22 @@ def test_nas_fuzz_smoke():
         decode = lambda d: nas_decode(d, ciph_algo=ciph)
         _assert_honest(_decode_or_fail(decode, data, f"nas mutated {i}"),
                        f"nas mutated {i}")
+
+
+def test_pfcp_fuzz_smoke():
+    decode = lambda d: pfcp_decode(0.0, d, SRC_IP, DST_IP, 8805, 8805)
+    rng = random.Random(SEED)
+    for i in range(RANDOM_PER_DECODER):
+        data = rng.randbytes(rng.randrange(0, 257))
+        _assert_honest(_decode_or_fail(decode, data, f"pfcp noise {i}"),
+                       f"pfcp noise {i}")
+    # Valid baseline: a pycrate-encoded session establishment request, the
+    # same construction the offline PFCP tests use.
+    valid = PFCPSessionEstablishmentReq()
+    valid[0]["S"].set_val(0)
+    valid[0]["SeqNum"].set_val(1)
+    valid = valid.to_bytes()
+    for i in range(MUTATED_PER_DECODER):
+        data = _mutate(rng, valid)
+        _assert_honest(_decode_or_fail(decode, data, f"pfcp mutated {i}"),
+                       f"pfcp mutated {i}")

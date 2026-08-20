@@ -76,10 +76,14 @@ def _incident_type(episode: Episode | None, raw: dict | None) -> str | None:
 
 def _flow_label(result: dict) -> str:
     """The flow identity for display: "{plane} — {procedure}" for SBI/N4
-    results (they carry no N2 flow), "flow {id}" otherwise."""
+    results (they carry no N2 flow of their own; a joined one names its
+    flow), "flow {id}" otherwise."""
     if result.get("plane") in ("sbi", "n4"):
-        return f"{result['plane'].upper()} — " \
-               f"{result.get('procedure') or 'unknown'}"
+        label = f"{result['plane'].upper()} — " \
+                f"{result.get('procedure') or 'unknown'}"
+        if result.get("flow_id") is not None:
+            label += f" (flow {result['flow_id']})"
+        return label
     return f"flow {result.get('flow_id')}"
 
 

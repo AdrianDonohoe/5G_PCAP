@@ -21,7 +21,9 @@ to an honest "no such evidence" observation, never a crash; capture dicts
 are read with .get() so a missing key merely omits a field. The inputs are
 5gcap's --json exports (N2 = {kpis, flows, unassociated}, N4 and SBI =
 {messages, procedures, unpaired_requests}); their shape is 5gcap's
-contract, not this module's.
+contract, not this module's. The merged export embeds the N4/SBI sections
+in the N2 file and tags each flow with the message indexes it correlates
+to (n4_refs/sbi_refs): flow:<id> lists those correlated messages.
 """
 
 import json
@@ -42,12 +44,18 @@ class DecodedCapture:
 
 def load_capture(n2_path: Path, n4_path: Path | None = None,
                  sbi_path: Path | None = None) -> DecodedCapture:
-    """Load the --json exports; file/JSON errors propagate to the CLI."""
+    """Load the --json exports; file/JSON errors propagate to the CLI.
+
+    A merged export embeds the plane sections in the N2 file: without an
+    explicit plane path those embedded sections are loaded instead. An
+    explicit path always wins."""
     n2 = json.loads(Path(n2_path).read_text(encoding="utf-8"))
     n4 = json.loads(Path(n4_path).read_text(encoding="utf-8")) \
-        if n4_path is not None else None
+        if n4_path is not None else \
+        (n2["n4"] if isinstance(n2.get("n4"), dict) else None)
     sbi = json.loads(Path(sbi_path).read_text(encoding="utf-8")) \
-        if sbi_path is not None else None
+        if sbi_path is not None else \
+        (n2["sbi"] if isinstance(n2.get("sbi"), dict) else None)
     return DecodedCapture(n2=n2, n4=n4, sbi=sbi)
 
 
@@ -104,7 +112,7 @@ def _flows_listing(capture: DecodedCapture) -> str:
     return "\n".join(lines)
 
 
-def _flow_detail(flow: dict) -> str:
+def _flow_detail(capture: DecodedCapture, flow: dict) -> str:
     msgs = flow.get("messages") or []
     lines = [f"Flow {flow.get('flow_id')} "
              f"(RAN-UE-NGAP-ID {flow.get('ran_ue_ngap_id')}, "
@@ -116,6 +124,38 @@ def _flow_detail(flow: dict) -> str:
     if procs:
         lines.append("  procedures:")
         lines += [f"    {_procedure_line(p)}" for p in procs]
+    # The merged export's per-flow refs: the plane messages this flow
+    # correlates to, listed with their n4:<i>/sbi:<i> handles so the
+    # search can follow up. Out-of-range refs degrade to omission.
+    if capture.n4 is not None:
+        n4_msgs = capture.n4.get("messages") or []
+        refs = flow.get("n4_refs") or []
+        if refs:
+            lines.append(f"  correlated N4 message(s) ({len(refs)}):")
+            for ref in refs:
+                if ref >= len(n4_msgs):
+                    continue
+                msg = n4_msgs[ref]
+                lines.append(f"    [n4:{ref + 1}] {fmt_ts(msg.get('ts'))}  "
+                             f"{msg.get('src_ip') or '?'}->"
+                             f"{msg.get('dst_ip') or '?'}  "
+                             f"{msg.get('name') or '?'}")
+    if capture.sbi is not None:
+        sbi_msgs = capture.sbi.get("messages") or []
+        refs = flow.get("sbi_refs") or []
+        if refs:
+            lines.append(f"  correlated SBI message(s) ({len(refs)}):")
+            for ref in refs:
+                if ref >= len(sbi_msgs):
+                    continue
+                msg = sbi_msgs[ref]
+                if msg.get("direction") == "request":
+                    what = f"{msg.get('method') or '?'} {msg.get('path') or '?'}"
+                else:
+                    status = msg.get("status")
+                    what = f"-> {status if status is not None else '?'}"
+                lines.append(f"    [sbi:{ref + 1}] {fmt_ts(msg.get('ts'))}  "
+                             f"{what}")
     return "\n".join(lines)
 
 
@@ -272,7 +312,7 @@ def _dispatch_flow(capture: DecodedCapture, handle: str) -> str:
             return (f"inspect_decoded_evidence: no flow {flow_id} in the "
                     f"capture ({len(flows)} flow(s))")
         if msg_idx is None:
-            return _flow_detail(flow)
+            return _flow_detail(capture, flow)
         msgs = flow.get("messages") or []
         if not 1 <= msg_idx <= len(msgs):
             return (f"inspect_decoded_evidence: flow {flow_id} has "

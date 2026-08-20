@@ -18,16 +18,17 @@ sandbox/README.md) pin the real wire shapes this matches:
 The SBI plane reuses the same two shape literals: an SBI procedure is a
 request/response pair (HTTP status), so an explicit reject is a response
 with status >= 400 and a timeout is a request never answered by capture
-end. SBI incidents carry flow_id None — SBI messages are not correlated to
-N2 flows — and cite the service name as their procedure.
+end. SBI incidents cite the service name as their procedure and carry the
+flow id of their correlated procedure when the merged export declares one
+(single-plane exports never carry the key, so it stays None).
 
 The N4 plane does the same over PFCP procedures, restricted to
 session-management kinds (establishment / modification / deletion /
 report): a reject is a response carrying a non-accept Cause, a timeout is
 a request never answered by capture end. Heartbeat, association, and
 node-report procedures are maintenance traffic — evidence, never an
-incident. N4 incidents also carry flow_id None (nothing in a PFCP message
-carries an NGAP UE ID) and cite the procedure kind.
+incident. N4 incidents cite the procedure kind and, like SBI incidents,
+carry the correlated flow id only when the merged export declares one.
 """
 
 import re
@@ -97,7 +98,7 @@ def detect_sbi_incidents(sbi: dict) -> list[dict]:
     for p in sbi.get("procedures") or []:
         if p.get("outcome") not in ("reject", "timeout"):
             continue
-        incident = {"plane": "sbi", "flow_id": None,
+        incident = {"plane": "sbi", "flow_id": p.get("flow_id"),
                     "procedure": p.get("kind") or "unknown",
                     "shape": ("explicit reject" if p.get("outcome") == "reject"
                               else "no terminal message (timeout)")}
@@ -122,7 +123,7 @@ def detect_n4_incidents(n4: dict) -> list[dict]:
             continue
         if p.get("outcome") not in ("reject", "timeout"):
             continue
-        incident = {"plane": "n4", "flow_id": None,
+        incident = {"plane": "n4", "flow_id": p.get("flow_id"),
                     "procedure": p.get("kind") or "unknown",
                     "shape": ("explicit reject" if p.get("outcome") == "reject"
                               else "no terminal message (timeout)")}

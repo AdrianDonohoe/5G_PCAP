@@ -227,7 +227,8 @@ def memory_context(store: MemoryStore, incident: dict, flow) -> str:
 def objective_text(incident: dict, memory: str = "") -> str:
     """The objective the search runs against, from the Incident description
     plus (optionally) relevant past Episodes retrieved from memory."""
-    if incident.get("flow_id") is not None:
+    if incident.get("flow_id") is not None \
+            and incident.get("plane") not in ("sbi", "n4"):
         # Neutral phrasing: a mid-flow cause-bearing message (e.g. a 5GMM
         # STATUS) can make an incident while the procedure records still
         # read accept -- claiming "the procedure failed" would prime a
@@ -235,10 +236,17 @@ def objective_text(incident: dict, memory: str = "") -> str:
         lines = [f"Explain the failure incident in flow "
                  f"{incident['flow_id']} ({incident['procedure']}) in this "
                  f"decoded 5G capture."]
-    else:  # SBI/N4 incidents: no N2 flow; the procedure IS the plane's unit
+    else:  # SBI/N4 incidents: no N2 flow of their own; the procedure IS the
+        # plane's unit. A joined incident keeps that focus and adds one
+        # flow clause pointing at the correlated flow's messages.
         plane = {"sbi": "SBI", "n4": "N4"}.get(incident.get("plane"), "SBI")
         lines = [f"Explain why the {incident['procedure']} procedure failed "
                  f"on the {plane} plane in this decoded 5G capture."]
+        if incident.get("flow_id") is not None:
+            lines.append(f"Correlated flow: this procedure is part of flow "
+                         f"{incident['flow_id']}'s signaling — inspect "
+                         f"flow:{incident['flow_id']} alongside the "
+                         f"{plane} handles.")
     if incident.get("shape"):
         lines.append(f"Failure shape: {incident['shape']}.")
     if incident.get("shape") == "no terminal message (timeout)":

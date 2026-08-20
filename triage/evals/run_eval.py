@@ -1,7 +1,9 @@
 """The offline eval harness: type_accuracy + diagnosis_quality over the
 labeled failure-injection fixtures (the six N2 scenarios plus the two
 sbi_* scenarios and n4_upf_timeout, which join the run once their sandbox
-pcaps exist).
+pcaps exist). The sandbox merged fixture decodes by one three-plane
+invocation but holds no failures, so it contributes nothing to the
+accuracy targets — the pytest suite exercises it instead.
 
 ADR-0002: lives in evals/, run explicitly (`uv run python evals/run_eval.py`
 from triage/) — every fixture run costs real Groq calls, so this never runs
@@ -10,11 +12,14 @@ nine fixtures enabled) and diagnosis_quality mean >= 0.7 (mean over runs;
 a run whose search completes no Hypothesis scores 0.0).
 
 Pipeline per fixture run: decode with 5gcap's CLI (subprocess; shared
-across the three runs; the sbi_* fixtures decode a second SBI pcap and
-n4_upf_timeout a second N4 pcap), auto-detect the failed Incidents, filter
-them to the fixture's own plane (a timeout fixture's SBI view can
-legitimately show an unanswered request that belongs to no N2 incident),
-run one LATS search per Incident (gpt-oss:120b via Groq), then score each
+across the three runs; the sbi_* fixtures decode a second SBI pcap,
+n4_upf_timeout a second N4 pcap, and the sandbox merged fixture one
+three-plane invocation whose export embeds the plane sections), auto-detect
+the failed Incidents, filter them to the fixture's own plane (a timeout
+fixture's SBI view can legitimately show an unanswered request that
+belongs to no N2 incident; the merged fixture searches every plane, joined
+incidents included), run one LATS search per Incident (gpt-oss:120b via
+Groq), then score each
 Hypothesis on four 0-1 dimensions with an LLM judge that is a distinct
 model from the generator. The judge is qwen3.6-27b on the same Groq
 account: the task's judge (llama-3.3-70b-versatile) is not served there,
@@ -49,6 +54,10 @@ FIXTURES = ["auth_failure", "registration_reject", "registration_timeout",
 SBI_FIXTURES = ["sbi_udm_timeout", "sbi_nssf_reject"]
 # the N4-plane scenario: enabled only once its sandbox pcap exists
 N4_FIXTURES = ["n4_upf_timeout"]
+# the golden sandbox triple, decoded by ONE merged three-plane invocation
+# (the golden captures hold no failures, so it never joins the live
+# accuracy run; decode_fixture serves it and the pytest suite proves it)
+MERGED_FIXTURES = ["sandbox"]
 
 ROOT = Path(__file__).resolve().parent.parent      # triage/
 FIVEGCAP = ROOT.parent / "5gcap"
@@ -167,7 +176,19 @@ def default_judge():
 def decode_fixture(name: str, workdir: Path) -> dict[str, Path]:
     """Decode one fixture's pcaps with 5gcap's CLI (the JSON contract, not
     fivegcap's Python API): every fixture has an N2 pcap; the sbi_* pair
-    additionally has an SBI pcap, n4_upf_timeout an N4 pcap."""
+    additionally has an SBI pcap, n4_upf_timeout an N4 pcap. A merged
+    fixture runs ONE three-plane invocation whose export embeds the plane
+    sections (load_capture picks them up)."""
+    if name in MERGED_FIXTURES:
+        paths = {"n2": workdir / f"{name}_merged.json"}
+        subprocess.run(["uv", "run", "5gcap", "analyze",
+                        str(FIXTURE_DIR / f"{name}_n2.pcap"), "--json",
+                        str(paths["n2"]),
+                        "--sbi", str(FIXTURE_DIR / f"{name}_sbi.pcap"),
+                        "--n4", str(FIXTURE_DIR / f"{name}_n4.pcap")],
+                       cwd=FIVEGCAP, check=True, capture_output=True,
+                       text=True)
+        return paths
     paths = {"n2": workdir / f"{name}_n2.json"}
     subprocess.run(["uv", "run", "5gcap", "analyze",
                     str(FIXTURE_DIR / f"{name}.pcap"), "--json",
@@ -269,6 +290,9 @@ def _hypothesis_brief(incident: dict, episode) -> str:
     flow = (f"{incident['plane'].upper()} — " + str(incident.get("procedure"))
             if incident.get("plane") in ("sbi", "n4")
             else f"flow {incident['flow_id']}")
+    if incident.get("flow_id") is not None \
+            and incident.get("plane") in ("sbi", "n4"):
+        flow += f" (flow {incident['flow_id']})"
     return (f"Procedure: {incident['procedure']} ({incident['shape']}), "
             f"{flow}\n"
             f"incident_type: {episode.incident_type}\n"
@@ -284,16 +308,19 @@ def run_fixture(name: str, paths: dict, label: str, runs: int,
     capture = load_capture(str(paths["n2"]), n4_path=paths.get("n4"),
                            sbi_path=paths.get("sbi"))
     incidents = detect_incidents(capture.n2)
-    if paths.get("n4") is not None:
+    if capture.n4 is not None:
         incidents += detect_n4_incidents(capture.n4)
-    if paths.get("sbi") is not None:
+    if capture.sbi is not None:
         incidents += detect_sbi_incidents(capture.sbi)
     # each fixture searches only its own plane's incidents: the SBI view of
     # an N2 failure can legitimately hold an unanswered request (the SMF is
-    # blackholed, so its API never answers) that belongs to no N2 Incident
-    plane = ("n4" if name in N4_FIXTURES else
-             "sbi" if name in SBI_FIXTURES else "n2")
-    incidents = [i for i in incidents if i.get("plane", "n2") == plane]
+    # blackholed, so its API never answers) that belongs to no N2 Incident.
+    # The merged fixture is the exception: its export correlates the
+    # planes, so every plane's incident is searched, joined ones included.
+    if name not in MERGED_FIXTURES:
+        plane = ("n4" if name in N4_FIXTURES else
+                 "sbi" if name in SBI_FIXTURES else "n2")
+        incidents = [i for i in incidents if i.get("plane", "n2") == plane]
     if not incidents:
         print(f"{name}: no Incidents detected in the decode — "
               f"0.0 for every run", flush=True)

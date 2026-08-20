@@ -7,6 +7,7 @@ The golden fixtures are real 5gcap --json output; regenerate with (from
 ../triage/tests/fixtures/golden_n2.json` (and the N4 analog).
 """
 
+import json
 from pathlib import Path
 
 import pytest
@@ -295,3 +296,75 @@ def test_sbi_handle_bounds():
         inspect_decoded_evidence(capture, "sbi:4")
     assert 'unrecognized handle "sbi:x"' in \
         inspect_decoded_evidence(capture, "sbi:x")
+
+
+def test_load_capture_detects_merged_export(tmp_path):
+    # the merged three-plane export embeds the plane sections: passed as
+    # the N2 file it loads them without separate --n4/--sbi files
+    merged = tmp_path / "merged.json"
+    merged.write_text(json.dumps({
+        "kpis": {}, "flows": [{"flow_id": 1, "messages": [],
+                               "n4_refs": [0], "sbi_refs": [1]}],
+        "unassociated": [],
+        "n4": {"messages": [{"name": "PFCP Session Establishment Response",
+                             "ts": 1.0}],
+               "procedures": [], "unpaired_requests": 0},
+        "sbi": {"messages": [{"ts": 0.5, "direction": "request",
+                              "method": "POST", "path": "/x"}],
+                "procedures": [], "unpaired_requests": 0}}))
+    capture = load_capture(merged)
+    assert capture.n2["flows"][0]["n4_refs"] == [0]
+    assert capture.n4["messages"][0]["name"] == \
+        "PFCP Session Establishment Response"
+    assert capture.sbi["messages"][0]["method"] == "POST"
+
+
+def test_explicit_plane_paths_win_over_embedded_sections(tmp_path):
+    # a separate --n4/--sbi file takes precedence over a merged file's
+    # embedded section
+    merged = tmp_path / "merged.json"
+    merged.write_text(json.dumps(
+        {"flows": [], "n4": {"messages": [{"name": "embedded"}]}}))
+    n4 = tmp_path / "n4.json"
+    n4.write_text(json.dumps({"messages": [{"name": "explicit"}]}))
+    capture = load_capture(merged, n4_path=n4)
+    assert capture.n4["messages"][0]["name"] == "explicit"
+
+
+def correlated_capture():
+    """A merged-style capture: flow 1's refs link N4 message 2 and SBI
+    message 1."""
+    return DecodedCapture(n2={
+        "flows": [{
+            "flow_id": 1, "ran_ue_ngap_id": 1, "amf_ue_ngap_id": 1,
+            "partial": False,
+            "messages": [{"ts": 1.0, "src_ip": "10.0.0.1",
+                          "dst_ip": "10.0.0.2",
+                          "ngap": "InitialUEMessage"}],
+            "procedures": [],
+            "n4_refs": [1], "sbi_refs": [0]}],
+        "unassociated": []},
+        n4={"messages": [
+            {"ts": 0.5, "name": "PFCP Session Establishment Request"},
+            {"ts": 1.2, "src_ip": "10.53.0.13", "dst_ip": "10.53.0.12",
+             "name": "PFCP Session Establishment Response", "seq": 1}],
+            "procedures": [], "unpaired_requests": 0},
+        sbi={"messages": [
+            {"ts": 0.7, "direction": "request", "method": "POST",
+             "path": "/nsmf-pdusession/v1/sm-contexts"}],
+            "procedures": [], "unpaired_requests": 0})
+
+
+def test_flow_detail_lists_correlated_plane_messages():
+    out = inspect_decoded_evidence(correlated_capture(), "flow:1")
+    assert "correlated N4 message(s) (1):" in out
+    assert "[n4:2]" in out
+    assert "PFCP Session Establishment Response" in out
+    assert "correlated SBI message(s) (1):" in out
+    assert "[sbi:1]" in out
+    assert "POST /nsmf-pdusession/v1/sm-contexts" in out
+
+
+def test_flow_detail_without_refs_omits_correlated_sections():
+    out = inspect_decoded_evidence(mini_capture(), "flow:1")
+    assert "correlated" not in out

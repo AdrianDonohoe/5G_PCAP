@@ -1,14 +1,18 @@
-"""Eval harness tests: the plane filter, offline with a stubbed search.
+"""Eval harness tests: the plane filter and the merged decode path, offline
+with a stubbed search.
 
 ADR-0002: run_eval.py itself is never executed here (every fixture run
 costs Groq calls); these tests import the harness and stub run_lats plus
-the judge, so no model call, download, or 5gcap subprocess happens.
+the judge, so no model call or download happens. The one exception is the
+merged-invocation test, which shells 5gcap's decode (offline) to prove the
+three-plane export loads with correlated flow ids.
 """
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
-from evals.run_eval import run_fixture
+from evals.run_eval import decode_fixture, run_fixture
 from triage.memory import Episode
 
 
@@ -98,3 +102,65 @@ def test_plane_filter_n4_searches_only_n4(tmp_path, monkeypatch):
                           stub_judge)
     assert [i["plane"] for i in seen] == ["n4"]
     assert results[0]["incident_types"] == ["registration_reject"]
+
+
+def merged_failure_decode(tmp_path):
+    """A merged export with a joined failure per plane: N2 flow 1's
+    partial flow, an N4 establishment timeout joined to flow 1, an SBI
+    reject joined to flow 1, and an unjoined SBI timeout."""
+    merged = {
+        "kpis": {}, "unassociated": [],
+        "flows": [{
+            "flow_id": 1, "partial": True,
+            "messages": [{"ts": 1.0, "ngap": "InitialUEMessage",
+                          "nas": "5GMMRegistrationRequest"}],
+            "procedures": [],
+            "n4_refs": [0], "sbi_refs": [0]}],
+        "n4": {
+            "messages": [{"ts": 2.0, "name": "PFCP Session Establishment "
+                                          "Request", "seq": 1,
+                          "seid": None, "cause": None, "flow_id": 1}],
+            "procedures": [{"kind": "session_establishment",
+                            "outcome": "timeout", "flow_id": 1}],
+            "unpaired_requests": 1},
+        "sbi": {
+            "messages": [],
+            "procedures": [
+                {"kind": "Nnssf_NSSelection", "outcome": "reject",
+                 "status": 403, "flow_id": 1},
+                {"kind": "Nudm_UEAuthentication", "outcome": "timeout",
+                 "flow_id": None}],
+            "unpaired_requests": 0}}
+    return {"n2": write_decode(tmp_path, "merged.json", merged)}
+
+
+def test_merged_fixture_searches_every_plane(tmp_path, monkeypatch):
+    seen = []
+    monkeypatch.setattr("evals.run_eval.run_lats", stub_search(seen))
+    results = run_fixture("sandbox", merged_failure_decode(tmp_path),
+                          "n4_upf_timeout", 1, stub_judge)
+    # every plane's incidents reach the search; the joined plane
+    # incidents carry their correlated flow id, the unjoined one None
+    assert [(i["plane"], i["flow_id"], i["procedure"]) for i in seen] == [
+        ("n2", 1, "Registration"),
+        ("n4", 1, "session_establishment"),
+        ("sbi", 1, "Nnssf_NSSelection"),
+        ("sbi", None, "Nudm_UEAuthentication")]
+    assert results[0]["incident_types"] == ["registration_reject"] * 4
+
+
+def test_decode_fixture_merged_invocation(tmp_path):
+    # the merged branch: ONE 5gcap invocation over the sandbox triple
+    # produces a single merged export whose plane sections carry the
+    # correlated flow ids and the cross-plane KPIs
+    paths = decode_fixture("sandbox", tmp_path)
+    assert set(paths) == {"n2"}
+    data = json.loads(Path(paths["n2"]).read_text())
+    assert "sbi" in data and "n4" in data
+    assert sorted(f for f in {m.get("flow_id")
+                              for m in data["n4"]["messages"]}
+                  if f is not None) == [1, 2, 3]
+    assert sorted(f for f in {p.get("flow_id")
+                              for p in data["sbi"]["procedures"]}
+                  if f is not None) == [1, 2, 3]
+    assert data["kpis"]["sbi_to_n4_ms"] is not None

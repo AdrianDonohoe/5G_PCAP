@@ -359,6 +359,30 @@ def test_objective_text_n4_incident():
     assert "There is no reject message" in text  # timeout special-case fires
 
 
+def test_objective_text_joined_sbi_incident():
+    # a joined plane incident keeps the plane/procedure wording and adds
+    # one flow clause (never the N2 flow wording)
+    text = objective_text({"plane": "sbi", "flow_id": 3,
+                           "procedure": "Nudm_UEAuthentication",
+                           "shape": "no terminal message (timeout)"})
+    assert "Nudm_UEAuthentication procedure failed" in text
+    assert "on the SBI plane" in text
+    assert "flow 3" in text
+    assert "failure incident in flow 3" not in text
+    assert "There is no reject message" in text  # timeout special-case
+
+
+def test_objective_text_joined_n4_incident():
+    text = objective_text({"plane": "n4", "flow_id": 2,
+                           "procedure": "session_establishment",
+                           "shape": "explicit reject",
+                           "detail": "PFCP cause code(s) observed: 75"})
+    assert "session_establishment procedure failed" in text
+    assert "on the N4 plane" in text
+    assert "flow 2" in text
+    assert "failure incident in flow 2" not in text
+
+
 def test_objective_text_includes_memory_context():
     text = objective_text({"flow_id": 3, "procedure": "PDU Session"},
                           memory="Past similar incidents: [1] auth_failure")

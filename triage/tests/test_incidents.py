@@ -216,3 +216,34 @@ def test_n4_maintenance_and_accept_procedures_skipped():
         n4_proc("session_modification", "accept", 1)]}
     assert detect_n4_incidents(n4) == []
     assert detect_n4_incidents({}) == []
+
+
+def test_sbi_joined_incident_carries_flow_id():
+    # the merged export's procedure records carry the correlated flow id
+    # (single-plane records lack the key, so .get() stays None)
+    sbi = {"procedures": [
+        {"kind": "Nnssf_NSSelection", "outcome": "reject",
+         "status": 403, "flow_id": 3}]}
+    assert detect_sbi_incidents(sbi) == [
+        {"plane": "sbi", "flow_id": 3, "procedure": "Nnssf_NSSelection",
+         "shape": "explicit reject",
+         "detail": "SBI status code(s) observed: 403"}]
+
+
+def test_n4_joined_incident_carries_flow_id():
+    n4 = {"procedures": [
+        {"kind": "session_establishment", "outcome": "timeout",
+         "flow_id": 2}]}
+    assert detect_n4_incidents(n4) == [
+        {"plane": "n4", "flow_id": 2, "procedure": "session_establishment",
+         "shape": "no terminal message (timeout)"}]
+
+
+def test_plane_incidents_mixed_joined_and_unjoined():
+    # joined and unjoined procedures coexist in one merged export
+    sbi = {"procedures": [
+        {"kind": "Nudm_UEAuthentication", "outcome": "timeout",
+         "flow_id": None},
+        {"kind": "Nnssf_NSSelection", "outcome": "reject",
+         "status": 403, "flow_id": 1}]}
+    assert [i["flow_id"] for i in detect_sbi_incidents(sbi)] == [None, 1]

@@ -620,6 +620,24 @@ def test_sbi_no_hypothesis_label():
     assert "**Flow:** SBI — Nnssf_NSSelection, explicit reject" in report
 
 
+def test_joined_sbi_result_label_names_flow():
+    # a joined incident's label keeps the plane identity and names the UE
+    result = saved_sbi_run(flow_id=3)
+    report = build_report([result], sbi_capture())
+    assert report.startswith("# Post-incident report — sbi_nssf_reject")
+    assert "**Flow:** SBI — Nnssf_NSSelection (flow 3), explicit reject" \
+        in report
+
+
+def test_multi_incident_joined_sbi_flow_label():
+    report = build_report([saved_run(), saved_sbi_run(flow_id=3)],
+                          synthetic_capture())
+    assert "| 2 | SBI — Nnssf_NSSelection (flow 3) | sbi_nssf_reject" \
+        in report
+    assert ("## Incident 2 — sbi_nssf_reject — "
+            "SBI — Nnssf_NSSelection (flow 3)") in report
+
+
 # --- N4 plane --------------------------------------------------------
 
 def n4_capture():
@@ -767,3 +785,10 @@ def test_n4_no_hypothesis_label():
                              "(N4 — session_establishment)")
     assert "**Flow:** N4 — session_establishment, " \
            "no terminal message (timeout)" in report
+
+
+def test_joined_n4_result_label_names_flow():
+    result = saved_n4_run(flow_id=2)
+    report = build_report([result], n4_capture())
+    assert ("**Flow:** N4 — session_establishment (flow 2), "
+            "no terminal message (timeout)") in report

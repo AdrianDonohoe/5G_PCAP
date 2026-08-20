@@ -45,8 +45,8 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     analyze.add_argument("--sbi", metavar="SBI.json",
                          help="optional 5gcap SBI decode output")
     analyze.add_argument("--flow", type=int,
-                         help="only triage Incidents in this N2 flow "
-                              "(SBI/N4 Incidents have no flow)")
+                         help="only triage Incidents in this flow "
+                              "(joined SBI/N4 Incidents included)")
     analyze.add_argument("--episodes-path", metavar="PATH",
                          help="episodic memory store override (default: "
                               "triage/memory/episodes.jsonl)")
@@ -139,7 +139,8 @@ def main(argv: list[str] | None = None) -> int:
     if capture.sbi is not None:
         incidents += detect_sbi_incidents(capture.sbi)
     if args.flow is not None:
-        # SBI and N4 Incidents have no flow, so this keeps N2 only.
+        # Joined SBI/N4 Incidents carry their flow id and stay in;
+        # unjoined ones drop out.
         incidents = [i for i in incidents if i.get("flow_id") == args.flow]
 
     if not incidents:

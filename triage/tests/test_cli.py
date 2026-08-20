@@ -170,6 +170,26 @@ def test_flow_filter_drops_sbi_incidents(fake_search, fake_consolidate,
     assert [flow_id for flow_id, _ in fake_search] == [1]
 
 
+def test_flow_filter_includes_joined_plane_incidents(fake_search,
+                                                     fake_consolidate,
+                                                     monkeypatch, capsys,
+                                                     tmp_path):
+    # a merged-export SBI procedure carries the correlated flow id, so
+    # --flow keeps it alongside the flow's N2 incident
+    sbi = tmp_path / "capture_sbi.json"
+    sbi.write_text(json.dumps({"messages": [], "procedures": [
+        {"kind": "Nnssf_NSSelection", "outcome": "reject", "status": 403,
+         "flow_id": 1}]}) + "\n")
+    monkeypatch.setattr("triage.cli.load_capture",
+                        lambda n2, n4=None, sbi=None: SimpleNamespace(
+                            n2={"flows": [reject_flow(1)]}, n4=None,
+                            sbi=json.loads(Path(sbi).read_text())
+                            if sbi else None))
+    assert main(["analyze", "capture_n2.json", "--sbi", str(sbi),
+                 "--flow", "1"]) == 0
+    assert [flow_id for flow_id, _ in fake_search] == [1, 1]
+
+
 def test_load_error_exits_1(monkeypatch, capsys):
     def boom(n2, n4=None, sbi=None):
         raise ValueError("boom")

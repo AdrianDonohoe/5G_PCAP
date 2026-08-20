@@ -16,7 +16,8 @@ from .output import (print_trace, write_json, write_merged_json,
 
 
 def analyze(path: str, json_out: str | None,
-            sbi_path: str | None = None) -> int:
+            sbi_path: str | None = None,
+            n4_path: str | None = None) -> int:
     raw = read_capture(path)
     if raw:
         msgs = [ngap_decode(m.ts, m.assoc, m.stream, m.data, m.src_ip, m.dst_ip)
@@ -24,13 +25,17 @@ def analyze(path: str, json_out: str | None,
         flows, unassociated = build_flows(msgs)
         kpi = compute(flows)
         print_trace(flows, kpi, unassociated)
-        if sbi_path:
-            # Merged run: the SBI capture is the same run's other plane.
-            sbi_msgs = read_sbi_capture(sbi_path)
-            corr = correlate(flows, sbi_msgs)
+        if sbi_path or n4_path:
+            # Merged run: the other captures are the same run's other planes.
+            sbi_msgs = read_sbi_capture(sbi_path) if sbi_path else None
+            n4_msgs = ([pfcp_decode(m.ts, m.data, m.src_ip, m.dst_ip,
+                                    m.src_port, m.dst_port)
+                        for m in read_pfcp_capture(n4_path)]
+                       if n4_path else None)
+            corr = correlate(flows, sbi_msgs=sbi_msgs, n4_msgs=n4_msgs)
             if json_out:
-                write_merged_json(flows, kpi, unassociated, corr, sbi_msgs,
-                                  json_out)
+                write_merged_json(flows, kpi, unassociated, corr, json_out,
+                                  sbi_msgs=sbi_msgs, n4_msgs=n4_msgs)
                 print(f"JSON written to {json_out}")
             return 0
         if json_out:
@@ -66,9 +71,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--sbi", dest="sbi_path", default=None,
                    help="path to an SBI (HTTP/2) capture of the same run; "
                         "correlated and merged into the JSON export")
+    p.add_argument("--n4", dest="n4_path", default=None,
+                   help="path to an N4 (PFCP) capture of the same run; "
+                        "correlated and merged into the JSON export")
     args = ap.parse_args(argv if argv is not None else sys.argv[1:])
     if args.cmd == "analyze":
-        return analyze(args.capture, args.json_out, sbi_path=args.sbi_path)
+        return analyze(args.capture, args.json_out,
+                       sbi_path=args.sbi_path, n4_path=args.n4_path)
     return 1
 
 

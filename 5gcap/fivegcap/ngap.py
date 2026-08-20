@@ -2,6 +2,7 @@
 
 import ast
 import re
+import socket
 from dataclasses import dataclass, field
 
 from pycrate_asn1dir.NGAP import NGAP_PDU_Descriptions as NGAP_D
@@ -20,6 +21,9 @@ class NgapMsg:
     amf_ue_id: int | None = None
     nas_pdu: bytes | None = None
     ies: dict = field(default_factory=dict)  # IE name -> value
+    f_teids: list = field(default_factory=list)  # GTP tunnels (teid, ip) the
+        # message declares: the SetupRequest's UPF endpoint, the
+        # SetupResponse's gNB endpoint — the N2<->N4 join keys
     unparsed: str | None = None      # decode failure note
     src_ip: str | None = None
     dst_ip: str | None = None
@@ -58,11 +62,13 @@ def decode(ts: float, assoc: tuple, stream: int, data: bytes,
                 amf_ue_id = ie_val
             elif ie_name == "NAS-PDU":
                 nas_pdu = _to_bytes(ie_val)
+        f_teids = _tunnels_of(ies)
         # Commit only on full success: a mid-extraction failure leaves the
         # message refused-only, never half-decoded (decoded XOR refused).
         m.kind, m.proc_code, m.name = kind, proc_code, name
         m.ran_ue_id, m.amf_ue_id, m.nas_pdu = ran_ue_id, amf_ue_id, nas_pdu
         m.ies = ies
+        m.f_teids = f_teids
     except Exception as e:  # lenient: never fatal (parse or extraction)
         m.unparsed = f"NGAP decode failed: {e!r}"
     return m
@@ -91,3 +97,79 @@ def _to_bytes(val) -> bytes | None:
             except (ValueError, SyntaxError):
                 pass
     return None
+
+
+def _ip_str(raw: bytes) -> str | None:
+    """Dotted-quad / colon form of an IPv4/IPv6 byte string."""
+    try:
+        if len(raw) == 4:
+            return socket.inet_ntoa(raw)
+        if len(raw) == 16:
+            return socket.inet_ntop(socket.AF_INET6, raw)
+    except OSError:
+        pass
+    return None
+
+
+def _tunnel_of(gtp) -> tuple[int, str] | None:
+    """(teid, ip) from a decoded gTPTunnel choice, leniently: either field
+    unreadable means no tunnel (the strict join must not half-match)."""
+    try:
+        if not (isinstance(gtp, (list, tuple)) and len(gtp) > 1
+                and gtp[0] == "gTPTunnel"):
+            return None
+        fields = gtp[1]
+        teid = _to_bytes(fields.get("gTP-TEID"))
+        if not teid:
+            return None
+        addr = fields.get("transportLayerAddress")
+        if isinstance(addr, (list, tuple)) and len(addr) > 1 \
+                and isinstance(addr[0], int):
+            # a BIT STRING comes back as [integer, bit count]
+            raw = addr[0].to_bytes((addr[1] + 7) // 8, "big")
+        else:
+            raw = _to_bytes(addr)
+        ip = _ip_str(raw) if raw else None
+        if teid and ip:
+            return int.from_bytes(teid, "big"), ip
+        return None
+    except Exception:
+        return None
+
+
+def _tunnels_of(ies: dict) -> list:
+    """The GTP tunnels an N2 message declares, leniently: the PDU-session
+    SetupRequest's UP transport layer information (the UPF endpoint) and the
+    SetupResponse's downlink TNL information (the gNB endpoint)."""
+    tunnels = []
+    for ie_name, ie_val in ies.items():
+        if ie_name == "PDUSessionResourceSetupListSUReq":
+            for item in ie_val if isinstance(ie_val, list) else []:
+                if not isinstance(item, dict):
+                    continue
+                xfer = item.get("pDUSessionResourceSetupRequestTransfer")
+                if not (isinstance(xfer, (list, tuple)) and len(xfer) > 1
+                        and isinstance(xfer[1], dict)):
+                    continue
+                for pie in xfer[1].get("protocolIEs", []):
+                    if pie.get("id") != 139:  # UPTransportLayerInformation
+                        continue
+                    t = _tunnel_of(pie.get("value", [None])[1])
+                    if t is not None:
+                        tunnels.append(t)
+        elif ie_name == "PDUSessionResourceSetupListSURes":
+            for item in ie_val if isinstance(ie_val, list) else []:
+                if not isinstance(item, dict):
+                    continue
+                xfer = item.get("pDUSessionResourceSetupResponseTransfer")
+                if not (isinstance(xfer, (list, tuple)) and len(xfer) > 1
+                        and isinstance(xfer[1], dict)):
+                    continue
+                dl = xfer[1].get("dLQosFlowPerTNLInformation")
+                for per_tnl in (dl if isinstance(dl, list) else [dl]):
+                    if isinstance(per_tnl, dict):
+                        t = _tunnel_of(per_tnl.get(
+                            "uPTransportLayerInformation"))
+                        if t is not None:
+                            tunnels.append(t)
+    return tunnels

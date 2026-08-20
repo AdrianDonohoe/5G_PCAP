@@ -147,41 +147,54 @@ def write_json(flows: list[Flow], kpi: KpiResult, unassociated: list[NgapMsg], p
         json.dump(to_dict(flows, kpi, unassociated), fh, indent=2)
 
 
-def to_pfcp_dict(msgs: list[PfcpMsg]) -> dict:
+def to_pfcp_dict(msgs: list[PfcpMsg],
+                 flow_of: dict[int, int | None] | None = None) -> dict:
+    """N4 plane export. The User ID and UE IP evidence fields are always
+    present. With `flow_of` (message index -> flow id) every message gains
+    a `flow_id` and each procedure follows its request's flow if linked,
+    else its response's (the establishment key lives on the response)."""
     procedures, unpaired = pair_procedures(msgs)
-    return {
-        "messages": [
-            {
-                "ts": m.ts,
-                "src_ip": m.src_ip,
-                "dst_ip": m.dst_ip,
-                "src_port": m.src_port,
-                "dst_port": m.dst_port,
-                "name": m.name,
-                "seq": m.seq,
-                "seid": m.seid,
-                "cause": m.cause_name,
-                "cause_code": m.cause,
-                "unparsed": m.unparsed,
-            }
-            for m in msgs
-        ],
-        "procedures": [
-            {
-                "kind": p.kind,
-                "start_ts": p.start_ts,
-                "end_ts": p.end_ts,
-                "start_msg": p.start_msg,
-                "end_msg": p.end_msg,
-                "outcome": p.outcome,
-                "cause": p.cause,
-                "cause_name": p.cause_name,
-                "duration_ms": (p.end_ts - p.start_ts) * 1000.0,
-            }
-            for p in procedures
-        ],
-        "unpaired_requests": len(unpaired),
-    }
+    messages = [
+        {
+            "ts": m.ts,
+            "src_ip": m.src_ip,
+            "dst_ip": m.dst_ip,
+            "src_port": m.src_port,
+            "dst_port": m.dst_port,
+            "name": m.name,
+            "seq": m.seq,
+            "seid": m.seid,
+            "cause": m.cause_name,
+            "cause_code": m.cause,
+            "user_id": m.user_id,
+            "ue_ip": m.ue_ip,
+            "unparsed": m.unparsed,
+        }
+        for m in msgs
+    ]
+    proc_dicts = [
+        {
+            "kind": p.kind,
+            "start_ts": p.start_ts,
+            "end_ts": p.end_ts,
+            "start_msg": p.start_msg,
+            "end_msg": p.end_msg,
+            "outcome": p.outcome,
+            "cause": p.cause,
+            "cause_name": p.cause_name,
+            "duration_ms": (p.end_ts - p.start_ts) * 1000.0,
+        }
+        for p in procedures
+    ]
+    if flow_of is not None:
+        for i, md in enumerate(messages):
+            md["flow_id"] = flow_of[i]
+        for pd, p in zip(proc_dicts, procedures):
+            req_f = flow_of[p.req_index] if p.req_index is not None else None
+            rsp_f = flow_of[p.rsp_index] if p.rsp_index is not None else None
+            pd["flow_id"] = req_f if req_f is not None else rsp_f
+    return {"messages": messages, "procedures": proc_dicts,
+            "unpaired_requests": len(unpaired)}
 
 
 def write_pfcp_json(msgs: list[PfcpMsg], path: str) -> None:
@@ -273,20 +286,31 @@ def write_sbi_json(msgs: list[SbiMsg], path: str) -> None:
 
 def to_merged_dict(flows: list[Flow], kpi: KpiResult,
                    unassociated: list[NgapMsg], corr: Correlation,
-                   sbi_msgs: list[SbiMsg]) -> dict:
-    """Merged N2 + SBI export: the single-plane dict, each flow's
-    `sbi_refs` message indexes, and the SBI section whose message and
-    procedure records carry the correlated `flow_id`."""
+                   sbi_msgs: list[SbiMsg] | None = None,
+                   n4_msgs: list[PfcpMsg] | None = None) -> dict:
+    """Merged export: the single-plane dict, plus per flow the `sbi_refs`
+    and/or `n4_refs` message indexes, and the "sbi"/"n4" sections (only for
+    the planes given) whose message and procedure records carry the
+    correlated `flow_id`."""
     out = to_dict(flows, kpi, unassociated)
     for fd in out["flows"]:
-        fd["sbi_refs"] = corr.flow_sbi_refs.get(fd["flow_id"], [])
-    out["sbi"] = to_sbi_dict(sbi_msgs, flow_of=corr.sbi_flow)
+        if sbi_msgs is not None:
+            fd["sbi_refs"] = corr.flow_sbi_refs.get(fd["flow_id"], [])
+        if n4_msgs is not None:
+            fd["n4_refs"] = corr.flow_n4_refs.get(fd["flow_id"], [])
+    if sbi_msgs is not None:
+        out["sbi"] = to_sbi_dict(sbi_msgs, flow_of=corr.sbi_flow)
+    if n4_msgs is not None:
+        out["n4"] = to_pfcp_dict(n4_msgs, flow_of=corr.n4_flow)
     return out
 
 
 def write_merged_json(flows: list[Flow], kpi: KpiResult,
                       unassociated: list[NgapMsg], corr: Correlation,
-                      sbi_msgs: list[SbiMsg], path: str) -> None:
+                      path: str,
+                      sbi_msgs: list[SbiMsg] | None = None,
+                      n4_msgs: list[PfcpMsg] | None = None) -> None:
     with open(path, "w", encoding="utf-8") as fh:
-        json.dump(to_merged_dict(flows, kpi, unassociated, corr, sbi_msgs),
+        json.dump(to_merged_dict(flows, kpi, unassociated, corr,
+                                 sbi_msgs, n4_msgs),
                   fh, indent=2)

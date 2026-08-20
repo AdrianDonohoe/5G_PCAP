@@ -78,6 +78,47 @@ def downlink_nas_transport(nas_pdu: bytes, ran_ue_id: int) -> bytes:
     return _ngap_bytes(_ngap_template("DownlinkNASTransport"), nas_pdu, ran_ue_id)
 
 
+def _gtp_tunnel(teid: int, ip_int: int) -> tuple:
+    return ("gTPTunnel", {"transportLayerAddress": (ip_int, 32),
+                          "gTP-TEID": teid.to_bytes(4, "big")})
+
+
+def pdu_session_setup_request(teid: int, ip_int: int, ran_ue_id: int) -> bytes:
+    """Wire bytes of a PDUSessionResourceSetupRequest whose UP transport
+    layer information carries the UPF tunnel (teid, ip_int)."""
+    val = _copy(_ngap_template("PDUSessionResourceSetupRequest"))
+    ies = val[1]["value"][1]["protocolIEs"]
+    for ie in ies:
+        ie_name = ie["value"][0]
+        if ie_name == "PDUSessionResourceSetupListSUReq":
+            xfer = ie["value"][1][0]["pDUSessionResourceSetupRequestTransfer"]
+            for pie in xfer[1]["protocolIEs"]:
+                if pie["id"] == 139:
+                    pie["value"] = ("UPTransportLayerInformation",
+                                    _gtp_tunnel(teid, ip_int))
+        elif ie_name == "RAN-UE-NGAP-ID":
+            ie["value"] = (ie_name, ran_ue_id)
+    NGAP_D.NGAP_PDU.set_val(val)
+    return NGAP_D.NGAP_PDU.to_aper()
+
+
+def pdu_session_setup_response(teid: int, ip_int: int, ran_ue_id: int) -> bytes:
+    """Wire bytes of a PDUSessionResourceSetupResponse whose downlink TNL
+    information carries the gNB tunnel (teid, ip_int)."""
+    val = _copy(_ngap_template("PDUSessionResourceSetupResponse"))
+    ies = val[1]["value"][1]["protocolIEs"]
+    for ie in ies:
+        ie_name = ie["value"][0]
+        if ie_name == "PDUSessionResourceSetupListSURes":
+            xfer = ie["value"][1][0]["pDUSessionResourceSetupResponseTransfer"]
+            xfer[1]["dLQosFlowPerTNLInformation"]["uPTransportLayerInformation"] = \
+                _gtp_tunnel(teid, ip_int)
+        elif ie_name == "RAN-UE-NGAP-ID":
+            ie["value"] = (ie_name, ran_ue_id)
+    NGAP_D.NGAP_PDU.set_val(val)
+    return NGAP_D.NGAP_PDU.to_aper()
+
+
 def _pkt(ts: float, ngap: bytes, sport: int, dport: int, tsn: int) -> bytes:
     sctp = SCTP(sport=sport, dport=dport)
     sctp /= SCTPChunkData(

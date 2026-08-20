@@ -9,7 +9,7 @@ One PCAP file recording a single interface over one time window.
 _Avoid_: trace, dump, recording
 
 **Flow**:
-All N2/N4 control-plane signaling belonging to one UE, associated across messages by NGAP UE IDs. SBI messages are not associated to a UE and live outside Flows.
+All N2 control-plane signaling belonging to one UE, associated across messages by NGAP UE IDs. N4 and SBI messages are standalone plane views, not part of any Flow; where a natural key exists on the wire (a GTP tunnel endpoint, a plaintext SUPI), they back-reference the Flow they correlate to — a link that exists or doesn't, never a guess.
 _Avoid_: session, connection, stream
 
 **Procedure**:

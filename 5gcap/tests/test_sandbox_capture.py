@@ -5,9 +5,11 @@ docs/adr/0002-open5gs-ueransim-sandbox.md), so assertions check structure and
 outcomes rather than exact latencies, which vary between runs.
 """
 
+import json
 from pathlib import Path
 
 from fivegcap.capture import read_capture, read_pfcp_capture
+from fivegcap.cli import analyze
 from fivegcap.correlate import correlate
 from fivegcap.flow import build_flows
 from fivegcap.kpi import compute
@@ -165,3 +167,65 @@ def test_sbi_correlates_by_supi():
                   if m.path and "/suci-" in m.path]
     assert len(suci_links) == 3
     assert len({fid for _, fid in suci_links}) == 3
+
+
+def test_n4_correlates_by_gtp_tunnel(tmp_path):
+    """Golden merged run: each UE's PDU-session setup carries the same
+    (teid, ip) pair as the N4 session establishment's Created PDR (UPF side)
+    and the modification's Update FAR (gNB side). The establishment response
+    and the modification request join their flow; the establishment requests
+    (placeholder tunnels only) never join and carry the User ID IMSI
+    evidence."""
+    msgs = [ngap_decode(m.ts, m.assoc, m.stream, m.data, m.src_ip, m.dst_ip)
+            for m in read_capture(str(N2_FIXTURE))]
+    flows, _ = build_flows(msgs)
+    n4_msgs = [pfcp_decode(m.ts, m.data, m.src_ip, m.dst_ip, m.src_port,
+                           m.dst_port)
+               for m in read_pfcp_capture(str(N4_FIXTURE))]
+    corr = correlate(flows, n4_msgs=n4_msgs)
+
+    # The three establishment requests carry only placeholder tunnels and
+    # User ID evidence: they never join, and their IMSIs form the bijection.
+    est_reqs = [i for i, m in enumerate(n4_msgs)
+                if m.name == "PFCP Session Establishment Request"]
+    assert len(est_reqs) == 3
+    assert all(corr.n4_flow[i] is None for i in est_reqs)
+    imsi_set = {"999700000000001", "999700000000002", "999700000000003"}
+    assert {n4_msgs[i].user_id for i in est_reqs} == imsi_set
+
+    # Each flow links exactly its establishment response (the UPF tunnel)
+    # and its modification request (the gNB tunnel); each joins one flow.
+    est_rsps = [i for i, m in enumerate(n4_msgs)
+                if m.name == "PFCP Session Establishment Response"]
+    mod_reqs = [i for i, m in enumerate(n4_msgs)
+                if m.name == "PFCP Session Modification Request"]
+    assert len(est_rsps) == 3 and len(mod_reqs) == 3
+    assert len({corr.n4_flow[i] for i in est_rsps}) == 3
+    assert len({corr.n4_flow[i] for i in mod_reqs}) == 3
+    for f in flows:
+        refs = corr.flow_n4_refs.get(f.flow_id, [])
+        assert refs == sorted(refs)
+        names = {n4_msgs[i].name for i in refs}
+        assert names == {"PFCP Session Establishment Response",
+                         "PFCP Session Modification Request"}, \
+            f"flow {f.flow_id} links {names}"
+
+    # Procedure flows follow their joined message: the establishment key
+    # lives on its response, the modification key on its request.
+    procedures, unpaired = pair_procedures(n4_msgs)
+    assert unpaired == []
+    for p in procedures:
+        if p.kind == "session_establishment":
+            assert corr.n4_flow[p.req_index] is None
+            assert corr.n4_flow[p.rsp_index] is not None
+        elif p.kind == "session_modification":
+            assert corr.n4_flow[p.req_index] is not None
+
+    # The merged export carries the evidence and the links.
+    merged = tmp_path / "merged.json"
+    assert analyze(str(N2_FIXTURE), str(merged),
+                   n4_path=str(N4_FIXTURE)) == 0
+    data = json.loads(merged.read_text())
+    assert {m["user_id"] for m in data["n4"]["messages"] if m["user_id"]} \
+        == imsi_set
+    assert all(m["ue_ip"] is None for m in data["n4"]["messages"])

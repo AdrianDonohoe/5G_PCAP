@@ -43,35 +43,53 @@ def decode(data: bytes, ciph_algo: int | None = None) -> NasMsg:
         msg.unparsed = f"NAS parse failed (pycrate err {err})"
         return msg
     name = getattr(parsed, "_name", None) or type(parsed).__name__
-    msg.protected = "SecProt" in name
-    msg.name = name
-    _fill_from(msg, parsed)
-    if msg.protected and len(data) > 7 and data[0] == 0x7E:
+    protected = "SecProt" in name
+    inner_msg = None
+    if protected and len(data) > 7 and data[0] == 0x7E:
         shdr = data[1] & 0x0F
         if shdr in (1, 3):
             # Integrity-protected only: payload is always plaintext.
-            _decode_inner(msg, data[7:])
+            inner_msg = _parse_inner(msg, data[7:])
         elif ciph_algo == 0:
             # 5G-EA0 null cipher: "ciphered" payload is plaintext.
-            _decode_inner(msg, data[7:])
+            inner_msg = _parse_inner(msg, data[7:])
         elif ciph_algo is None:
+            # Commit nothing: without the inner, the outer name alone is
+            # not a decode — refuse (protected stays as the reason).
+            msg.protected = True
             msg.unparsed = "security-protected (ciphering unknown: no SMC in capture)"
+            return msg
         else:
+            msg.protected = True
             msg.unparsed = f"security-protected (ciphering 5G-EA{ciph_algo} not supported)"
+            return msg
+        if inner_msg is None:
+            # _parse_inner set the refusal note: refuse, don't half-decode.
+            msg.protected = True
+            return msg
+    # Commit only on full success: a message is either decoded (name set)
+    # or refused (unparsed set), never a half-decoded mix of the two.
+    msg.protected = protected
+    msg.name = name
+    _fill_from(msg, parsed)
+    if inner_msg is not None:
+        msg.inner = getattr(inner_msg, "_name", None) or type(inner_msg).__name__
+        _fill_from(msg, inner_msg)
     return msg
 
 
-def _decode_inner(msg: NasMsg, inner_data: bytes) -> None:
+def _parse_inner(msg: NasMsg, inner_data: bytes):
+    """Parse the plaintext inner NAS, returning it; on failure set the
+    refusal note on `msg` and return None (the message is then refused)."""
     try:
         inner, err = NAS5G.parse_NAS5G(inner_data, inner=True, sec_hdr=True)
     except Exception as e:  # lenient
         msg.unparsed = f"inner NAS parse failed: {e!r}"
-        return
+        return None
     if inner is None:
         msg.unparsed = f"inner NAS parse failed (pycrate err {err})"
-        return
-    msg.inner = getattr(inner, "_name", None) or type(inner).__name__
-    _fill_from(msg, inner)
+        return None
+    return inner
 
 
 def _fill_from(msg: NasMsg, parsed) -> None:

@@ -13,6 +13,7 @@ import random
 import pytest
 from pycrate_mobile.TS24501_FGMM import FGMMRegistrationRequest
 
+from fivegcap.nas import decode as nas_decode
 from fivegcap.ngap import decode as ngap_decode
 from synth import initial_ue_message
 
@@ -69,3 +70,24 @@ def test_ngap_fuzz_smoke():
         data = _mutate(rng, valid)
         _assert_honest(_decode_or_fail(decode, data, f"ngap mutated {i}"),
                        f"ngap mutated {i}")
+
+
+def test_nas_fuzz_smoke():
+    rng = random.Random(SEED)
+    for i in range(RANDOM_PER_DECODER):
+        data = rng.randbytes(rng.randrange(0, 257))
+        _assert_honest(_decode_or_fail(nas_decode, data, f"nas noise {i}"),
+                       f"nas noise {i}")
+    plain = FGMMRegistrationRequest().to_bytes()
+    # Protected wire form (EPB, sec hdr, 4-byte MAC, seq — the layout
+    # test_nas.py's _wrap builds) so the decoder's security-header handling
+    # is exercised alongside plaintext parsing.
+    protected = b"\x7e\x02\x01\x02\x03\x04\x00" + plain
+    combos = ((plain, None), (protected, None), (plain, 0), (protected, 0),
+              (protected, 2))  # the unsupported-cipher refusal too
+    for i in range(MUTATED_PER_DECODER):
+        base, ciph = combos[i % len(combos)]
+        data = _mutate(rng, base)
+        decode = lambda d: nas_decode(d, ciph_algo=ciph)
+        _assert_honest(_decode_or_fail(decode, data, f"nas mutated {i}"),
+                       f"nas mutated {i}")

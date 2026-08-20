@@ -79,12 +79,15 @@ def test_nas_fuzz_smoke():
         _assert_honest(_decode_or_fail(nas_decode, data, f"nas noise {i}"),
                        f"nas noise {i}")
     plain = FGMMRegistrationRequest().to_bytes()
-    # Protected wire form (EPB, sec hdr, 4-byte MAC, seq — the layout
+    # Protected wire forms (EPB, sec hdr, 4-byte MAC, seq — the layout
     # test_nas.py's _wrap builds) so the decoder's security-header handling
-    # is exercised alongside plaintext parsing.
-    protected = b"\x7e\x02\x01\x02\x03\x04\x00" + plain
-    combos = ((plain, None), (protected, None), (plain, 0), (protected, 0),
-              (protected, 2))  # the unsupported-cipher refusal too
+    # is exercised alongside plaintext parsing: shdr 2 is the ciphered
+    # form (ciph_algo None/0/2 cover the three cipher branches), shdr 3
+    # the integrity-only form (always-plaintext inner branch).
+    shdr2 = b"\x7e\x02\x01\x02\x03\x04\x00" + plain
+    shdr3 = b"\x7e\x03\x01\x02\x03\x04\x00" + plain
+    combos = ((plain, None), (shdr2, None), (plain, 0), (shdr2, 0),
+              (shdr2, 2), (shdr3, None))  # every security-header branch
     for i in range(MUTATED_PER_DECODER):
         base, ciph = combos[i % len(combos)]
         data = _mutate(rng, base)

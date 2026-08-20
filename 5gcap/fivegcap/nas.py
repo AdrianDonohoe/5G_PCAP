@@ -67,6 +67,13 @@ def decode(data: bytes, ciph_algo: int | None = None) -> NasMsg:
             # _parse_inner set the refusal note: refuse, don't half-decode.
             msg.protected = True
             return msg
+    if protected and inner_msg is None:
+        # Protected, but the 7-byte header can't be stripped (truncated, or
+        # a defensive EPD mismatch): the outer name alone is not a decode —
+        # refuse, don't half-decode.
+        msg.protected = True
+        msg.unparsed = "security-protected (payload unreadable)"
+        return msg
     # Commit only on full success: a message is either decoded (name set)
     # or refused (unparsed set), never a half-decoded mix of the two.
     msg.protected = protected

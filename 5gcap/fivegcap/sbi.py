@@ -197,6 +197,10 @@ def _decode_connection(conn: frozenset,
                 elif isinstance(e, StreamReset):
                     rec = (requests if is_request else responses).get(e.stream_id)
                     if rec is not None and rec.unparsed is None:
+                        # A message carrying a note is refused (decoded XOR
+                        # refused): clear the name so the reset degrades to an
+                        # honest unparsed note, not a half-decoded mix.
+                        rec.name = None
                         rec.unparsed = "stream reset"
     return msgs
 

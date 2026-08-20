@@ -13,11 +13,16 @@ import random
 import pytest
 from pycrate_mobile.TS24501_FGMM import FGMMRegistrationRequest
 from pycrate_mobile.TS29244_PFCP import PFCPSessionEstablishmentReq
+from h2.config import H2Configuration
+from h2.connection import H2Connection
+from scapy.all import wrpcap
 
 from fivegcap.nas import decode as nas_decode
 from fivegcap.ngap import decode as ngap_decode
 from fivegcap.pfcp import decode as pfcp_decode
+from fivegcap.sbi import read_sbi_capture
 from synth import initial_ue_message
+from test_sbi import CLIENT, SERVER, SBI_PORT, _exchange, _headers, _segment
 
 SEED = 0
 RANDOM_PER_DECODER = 200
@@ -115,3 +120,41 @@ def test_pfcp_fuzz_smoke():
         data = _mutate(rng, valid)
         _assert_honest(_decode_or_fail(decode, data, f"pfcp mutated {i}"),
                        f"pfcp mutated {i}")
+
+
+def test_sbi_fuzz_smoke(tmp_path):
+    """SBI is file-level: one synthetic pcap per input, so a crash names
+    its input. Noise = a garbage TCP stream on the SBI port; mutations =
+    bit flips / truncation / junk insertion in a valid client byte stream
+    (the h2c construction of the offline SBI tests)."""
+    rng = random.Random(SEED)
+    for i in range(RANDOM_PER_DECODER):
+        data = rng.randbytes(rng.randrange(0, 257))
+        pcap = tmp_path / f"sbi_noise_{i}.pcap"
+        wrpcap(str(pcap), [_segment(CLIENT, 40000, SERVER, SBI_PORT, data)])
+        for msg in _decode_or_fail(read_sbi_capture, str(pcap),
+                                   f"sbi noise {i}"):
+            _assert_honest(msg, f"sbi noise {i} ({data.hex()})")
+    c2s, _ = _exchange(_headers("/nudm-ueau/v1/auth-vectors"), status=200)
+    reset = _reset_client_stream()
+    baselines = (c2s, reset)
+    for i in range(MUTATED_PER_DECODER):
+        data = _mutate(rng, baselines[i % 2])
+        pcap = tmp_path / f"sbi_mutated_{i}.pcap"
+        wrpcap(str(pcap), [_segment(CLIENT, 40000, SERVER, SBI_PORT, data)])
+        for msg in _decode_or_fail(read_sbi_capture, str(pcap),
+                                   f"sbi mutated {i}"):
+            _assert_honest(msg, f"sbi mutated {i} ({data.hex()})")
+
+
+def _reset_client_stream() -> bytes:
+    """Client-side h2c bytes ending in an RST_STREAM on stream 1 — the
+    realistic client-abort shape that fires the decoder's stream-reset
+    branch (a request with no end-of-stream, then a reset)."""
+    c = H2Connection(H2Configuration(client_side=True))
+    c.initiate_connection()
+    c2s = c.data_to_send()
+    c.send_headers(1, _headers("/nudm-ueau/v1/auth-vectors"), end_stream=False)
+    c2s += c.data_to_send()
+    c.reset_stream(1)
+    return c2s + c.data_to_send()

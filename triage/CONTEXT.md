@@ -16,8 +16,10 @@ N2 Flow, a failed SBI service transaction (one HTTP request/response
 pair), or an **N4 incident** (below) — either an explicit Reject with a
 cause code (or an HTTP status >= 400), or a terminal message that never
 arrives (an unanswered SBI request). The unit of work the agent is invoked
-on. SBI and N4 Incidents carry no flow_id: neither plane's messages are
-correlated to N2 flows.
+on. SBI and N4 Incidents have no Flow of their own; where the decode's
+merged export correlates their procedure to an N2 Flow, the Incident
+carries that flow's id as `flow_id` — a link that exists or doesn't, never
+a guess. An unjoined Incident carries none.
 _Avoid_: alert, event, case
 
 **N4 incident**:

@@ -4,7 +4,7 @@ import json
 
 from .correlate import Correlation
 from .flow import Flow
-from .kpi import KpiResult
+from .kpi import KpiResult, cross_plane_kpis
 from .ngap import NgapMsg
 from .pfcp import PfcpMsg, N4Procedure, pair_procedures
 from .sbi import SbiMsg, pair_procedures as pair_sbi_procedures
@@ -302,6 +302,10 @@ def to_merged_dict(flows: list[Flow], kpi: KpiResult,
         out["sbi"] = to_sbi_dict(sbi_msgs, flow_of=corr.sbi_flow)
     if n4_msgs is not None:
         out["n4"] = to_pfcp_dict(n4_msgs, flow_of=corr.n4_flow)
+    if sbi_msgs is not None and n4_msgs is not None:
+        # Cross-plane KPIs need both the SBI and the N4 leg: only the
+        # three-plane merged export carries them.
+        out["kpis"].update(cross_plane_kpis(flows, corr, sbi_msgs, n4_msgs))
     return out
 
 

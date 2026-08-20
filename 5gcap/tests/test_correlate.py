@@ -8,6 +8,7 @@ cheap negative cases.
 
 import json
 
+import pytest
 from pycrate_mobile.TS24501_FGMM import (
     FGMMRegistrationAccept,
     FGMMRegistrationRequest,
@@ -15,8 +16,9 @@ from pycrate_mobile.TS24501_FGMM import (
 from scapy.all import wrpcap
 
 from fivegcap.cli import analyze
-from fivegcap.correlate import correlate
+from fivegcap.correlate import Correlation, correlate
 from fivegcap.flow import Flow
+from fivegcap.kpi import cross_plane_kpis
 from fivegcap.nas import NasMsg
 from fivegcap.ngap import NgapMsg
 from fivegcap.pfcp import PfcpMsg
@@ -223,3 +225,127 @@ def test_merged_export_carries_n4_links(tmp_path):
     assert single["unassociated"] == data["unassociated"]
     assert single["flows"][0] == {k: v for k, v in data["flows"][0].items()
                                   if k != "n4_refs"}
+
+# --- #10: cross-plane PDU-session KPIs ---------------------------------------
+
+
+def _kpi_flow(fid: int, setup_ts: float) -> Flow:
+    f = Flow(flow_id=fid, assoc=((45000, 38412)), ran_ue_id=fid,
+             amf_ue_id=fid, partial=False)
+    ng = NgapMsg(ts=setup_ts, assoc=(), stream=0, raw=b"",
+                 name="PDUSessionResourceSetupResponse")
+    f.messages = [(ng, None)]
+    return f
+
+
+def _kpi_sbi(ts: float, dst_ip: str) -> SbiMsg:
+    return SbiMsg(ts=ts, stream_id=1, direction="request", method="POST",
+                  path="/nsmf-pdusession/v1/sm-contexts",
+                  name="Nsmf_PDUSession", conn=CONN, src_ip=CLIENT,
+                  dst_ip=dst_ip, src_port=40000, dst_port=7777)
+
+
+def _kpi_est_rsp(ts: float, smf_ip: str) -> PfcpMsg:
+    return PfcpMsg(ts=ts, raw=b"", msg_type=51,
+                   name="PFCP Session Establishment Response", seq=1,
+                   src_ip=UPF, dst_ip=smf_ip)
+
+
+def _kpi_corr(flow_n4_refs=None, flow_sbi_refs=None) -> Correlation:
+    c = Correlation()
+    c.flow_n4_refs = flow_n4_refs or {}
+    c.flow_sbi_refs = flow_sbi_refs or {}
+    return c
+
+
+def test_cross_plane_kpis_exact_values():
+    # One complete flow: create 0.040 at the session's SMF, N4
+    # establishment response 0.080, N2 SetupResponse 0.100.
+    flows = [_kpi_flow(1, 0.100)]
+    sbi = [_kpi_sbi(0.040, SMF)]
+    n4 = [_kpi_est_rsp(0.080, SMF)]
+    corr = _kpi_corr({1: [0]}, {1: [0]})
+    k = cross_plane_kpis(flows, corr, sbi, n4)
+    assert k["sbi_to_n4_ms"] == pytest.approx(40.0)
+    assert k["n4_to_n2_ms"] == pytest.approx(20.0)
+    assert k["sbi_to_n2_ms"] == pytest.approx(60.0)
+
+
+def test_create_at_another_smf_is_not_the_leg():
+    # Two creates join the flow: one at another SMF instance, one at the
+    # SMF that ran the session (the N4 establishment response's dst).
+    flows = [_kpi_flow(1, 0.100)]
+    sbi = [_kpi_sbi(0.030, "10.0.0.9"), _kpi_sbi(0.040, SMF)]
+    n4 = [_kpi_est_rsp(0.080, SMF)]
+    corr = _kpi_corr({1: [0]}, {1: [0, 1]})
+    k = cross_plane_kpis(flows, corr, sbi, n4)
+    assert k["sbi_to_n4_ms"] == pytest.approx(40.0)
+    assert k["sbi_to_n2_ms"] == pytest.approx(60.0)
+
+
+def test_duplicate_creates_at_the_session_smf_exclude_the_flow():
+    # Two creates at the same SMF: which one anchored the session is
+    # unknowable, so the SBI-leg KPIs exclude the flow; n4_to_n2 stands.
+    flows = [_kpi_flow(1, 0.100)]
+    sbi = [_kpi_sbi(0.040, SMF), _kpi_sbi(0.041, SMF)]
+    n4 = [_kpi_est_rsp(0.080, SMF)]
+    corr = _kpi_corr({1: [0]}, {1: [0, 1]})
+    k = cross_plane_kpis(flows, corr, sbi, n4)
+    assert k["sbi_to_n4_ms"] is None
+    assert k["n4_to_n2_ms"] == pytest.approx(20.0)
+    assert k["sbi_to_n2_ms"] is None
+
+
+def test_missing_leg_excludes_only_the_kpis_that_need_it():
+    # No N4 establishment response: n4_to_n2 and sbi_to_n4 are excluded,
+    # but the single unambiguous create still anchors sbi_to_n2.
+    flows = [_kpi_flow(1, 0.100)]
+    sbi = [_kpi_sbi(0.040, SMF)]
+    corr = _kpi_corr({}, {1: [0]})
+    k = cross_plane_kpis(flows, corr, sbi, [])
+    assert k["sbi_to_n4_ms"] is None
+    assert k["n4_to_n2_ms"] is None
+    assert k["sbi_to_n2_ms"] == pytest.approx(60.0)
+
+
+def test_merged_export_carries_cross_plane_kpis(tmp_path):
+    # The n4-links synthetic pair plus the SBI leg: the sm-contexts create
+    # (body-only supi ...002) at the N4 SMF and its 201. Create 0.040, N4
+    # establishment response 0.080, N2 SetupResponse 0.100 -> 40/20/60 ms.
+    # The registration pair gives the flow its SUPI so the create joins.
+    n2 = tmp_path / "n2.pcap"
+    wrpcap(str(n2), [
+        _pkt(0.000, initial_ue_message(_reg_with_5gsid(SUCI_NULL), 1),
+             45000, 38412, 1001),
+        _pkt(0.050, downlink_nas_transport(
+            FGMMRegistrationAccept().to_bytes(), 1), 38412, 45000, 2001),
+        _pkt(0.060, pdu_session_setup_request(56400, 0x0A35000D, 1),
+             45000, 38412, 1002),
+        _pkt(0.100, pdu_session_setup_response(1, 0x0A350014, 1),
+             38412, 45000, 2002),
+    ])
+    n4 = tmp_path / "n4.pcap"
+    wrpcap(str(n4), [
+        _n4_segment(_est_req(1, bcd=IMSI_BCD), src=SMF, dst=UPF, ts=0.050),
+        _n4_segment(_est_rsp_keyed(1, 56400, bytes([10, 53, 0, 13])),
+                    src=UPF, dst=SMF, ts=0.080),
+        _n4_segment(_mod_req_keyed(2, 1, bytes([10, 53, 0, 20])),
+                    src=SMF, dst=UPF, ts=0.090),
+        _n4_segment(_mod_rsp(2), src=UPF, dst=SMF, ts=0.120),
+    ])
+    sbi = tmp_path / "sbi.pcap"
+    c2s, s2c = _exchange(
+        _headers("/nsmf-pdusession/v1/sm-contexts"),
+        request_body=b'{"supi": "imsi-999700000000002"}', status=201)
+    pk1 = _segment(SERVER, 40000, SMF, 7777, c2s)
+    pk1.time = 0.040
+    pk2 = _segment(SMF, 7777, SERVER, 40000, s2c)
+    pk2.time = 0.060
+    wrpcap(str(sbi), [pk1, pk2])
+    merged = tmp_path / "merged.json"
+    assert analyze(str(n2), str(merged),
+                   sbi_path=str(sbi), n4_path=str(n4)) == 0
+    kpis = json.loads(merged.read_text())["kpis"]
+    assert kpis["sbi_to_n4_ms"] == pytest.approx(40.0)
+    assert kpis["n4_to_n2_ms"] == pytest.approx(20.0)
+    assert kpis["sbi_to_n2_ms"] == pytest.approx(60.0)

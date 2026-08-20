@@ -53,3 +53,42 @@ def compute(flows: list[Flow]) -> KpiResult:
             elif p.outcome == "reject":
                 r.failures += 1
     return r
+
+
+def _mean(times: list[float]) -> float | None:
+    return sum(times) / len(times) if times else None
+
+
+def cross_plane_kpis(flows: list[Flow], corr, sbi_msgs, n4_msgs) -> dict:
+    """The three cross-plane PDU-session latency means (ms), complete flows
+    only. Each KPI needs its legs present exactly once: the SBI leg is the
+    flow's sm-contexts create at the SMF that ran the session (its dst_ip
+    equals the joined N4 establishment response's dst_ip; without that
+    response the flow's creates must be unambiguous), the N4 leg is that
+    response, the N2 leg the flow's PDU-session SetupResponse. A flow
+    missing a leg is excluded from every KPI that needs it; nothing is
+    ever estimated."""
+    sbi_to_n4, n4_to_n2, sbi_to_n2 = [], [], []
+    for f in flows:
+        setup_rsps = [ng for ng, _ in f.messages
+                      if ng.name == "PDUSessionResourceSetupResponse"]
+        est_rsps = [n4_msgs[i] for i in corr.flow_n4_refs.get(f.flow_id, [])
+                    if n4_msgs[i].name == "PFCP Session Establishment Response"]
+        smf_ip = est_rsps[0].dst_ip if len(est_rsps) == 1 else None
+        creates = [sbi_msgs[i] for i in corr.flow_sbi_refs.get(f.flow_id, [])
+                   if (sbi_msgs[i].direction == "request"
+                       and sbi_msgs[i].method == "POST"
+                       and sbi_msgs[i].path == "/nsmf-pdusession/v1/sm-contexts"
+                       and (smf_ip is None or sbi_msgs[i].dst_ip == smf_ip))]
+        create = creates[0] if len(creates) == 1 else None
+        est = est_rsps[0] if len(est_rsps) == 1 else None
+        setup = setup_rsps[0] if len(setup_rsps) == 1 else None
+        if create is not None and est is not None:
+            sbi_to_n4.append((est.ts - create.ts) * 1000.0)
+        if est is not None and setup is not None:
+            n4_to_n2.append((setup.ts - est.ts) * 1000.0)
+        if create is not None and setup is not None:
+            sbi_to_n2.append((setup.ts - create.ts) * 1000.0)
+    return {"sbi_to_n4_ms": _mean(sbi_to_n4),
+            "n4_to_n2_ms": _mean(n4_to_n2),
+            "sbi_to_n2_ms": _mean(sbi_to_n2)}

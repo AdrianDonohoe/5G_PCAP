@@ -8,6 +8,8 @@ outcomes rather than exact latencies, which vary between runs.
 import json
 from pathlib import Path
 
+import pytest
+
 from fivegcap.capture import read_capture, read_pfcp_capture
 from fivegcap.cli import analyze
 from fivegcap.correlate import correlate
@@ -229,3 +231,19 @@ def test_n4_correlates_by_gtp_tunnel(tmp_path):
     assert {m["user_id"] for m in data["n4"]["messages"] if m["user_id"]} \
         == imsi_set
     assert all(m["ue_ip"] is None for m in data["n4"]["messages"])
+
+
+def test_cross_plane_kpis_on_golden_triple(tmp_path):
+    """Golden merged run: each UE's sm-contexts create at the session's SMF
+    (the create to the other SMF instance is not the leg), its N4
+    establishment response, and its N2 SetupResponse form a complete flow.
+    The three means match the fixture's real timestamps."""
+    merged = tmp_path / "merged.json"
+    assert analyze(str(N2_FIXTURE), str(merged), sbi_path=str(SBI_FIXTURE),
+                   n4_path=str(N4_FIXTURE)) == 0
+    kpis = json.loads(merged.read_text())["kpis"]
+    # Real values: create 0.539766/0.772983/1.014069 -> est rsp
+    # 0.554980/0.791726/1.026257 -> setup rsp 0.562861/0.795288/1.029060.
+    assert kpis["sbi_to_n4_ms"] == pytest.approx(15.3817, rel=1e-4)
+    assert kpis["n4_to_n2_ms"] == pytest.approx(4.7487, rel=1e-4)
+    assert kpis["sbi_to_n2_ms"] == pytest.approx(20.1303, rel=1e-4)

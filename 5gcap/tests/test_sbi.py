@@ -189,6 +189,35 @@ def test_non_7777_tcp_ignored(tmp_path):
     assert read_sbi_capture(str(tmp_path / "x.pcap")) == []
 
 
+def test_response_after_client_reset_degrades(tmp_path):
+    # Client sends its request, then resets stream 1 while the server's
+    # response is in flight (the server answered before seeing the RST).
+    # The request is refused as "stream reset"; a response to a refused
+    # request must degrade to an unparsed note too — copying the cleared
+    # name would leave it neither decoded nor refused.
+    client = H2Connection(H2Configuration(client_side=True))
+    client.initiate_connection()
+    preface = client.data_to_send()         # client preface + SETTINGS
+    client.send_headers(1, _headers("/nudm-ueau/v1/auth-vectors"),
+                        end_stream=False)
+    headers_wire = client.data_to_send()
+    client.reset_stream(1)
+    reset_wire = client.data_to_send()
+    c2s = preface + headers_wire + reset_wire
+    server = H2Connection(H2Configuration(client_side=False))
+    server.receive_data(preface + headers_wire)
+    server.send_headers(1, [(":status", "200")], end_stream=True)
+    s2c = server.data_to_send()
+    wrpcap(str(tmp_path / "x.pcap"),
+           [_segment(CLIENT, 40000, SERVER, SBI_PORT, c2s),
+            _segment(SERVER, SBI_PORT, CLIENT, 40000, s2c)])
+    msgs = read_sbi_capture(str(tmp_path / "x.pcap"))
+    req = next(m for m in msgs if m.direction == "request")
+    rsp = next(m for m in msgs if m.direction == "response")
+    assert req.name is None and req.unparsed == "stream reset"
+    assert rsp.name is None and rsp.unparsed
+
+
 def test_service_name_prefixes_and_fallback():
     assert service_name("/nudm-ueau/v1/x") == "Nudm_UEAuthentication"
     assert service_name("/nudm-uecm/v1/x") == "Nudm_UECM"

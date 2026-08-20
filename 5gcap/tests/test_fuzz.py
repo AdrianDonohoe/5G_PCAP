@@ -20,9 +20,9 @@ from scapy.all import wrpcap
 from fivegcap.nas import decode as nas_decode
 from fivegcap.ngap import decode as ngap_decode
 from fivegcap.pfcp import decode as pfcp_decode
-from fivegcap.sbi import read_sbi_capture
+from fivegcap.sbi import SBI_PORT, read_sbi_capture
 from synth import initial_ue_message
-from test_sbi import CLIENT, SERVER, SBI_PORT, _exchange, _headers, _segment
+from test_sbi import CLIENT, SERVER, _exchange, _headers, _segment
 
 SEED = 0
 RANDOM_PER_DECODER = 200
@@ -129,7 +129,10 @@ def test_sbi_fuzz_smoke(tmp_path):
     (the h2c construction of the offline SBI tests)."""
     rng = random.Random(SEED)
     for i in range(RANDOM_PER_DECODER):
-        data = rng.randbytes(rng.randrange(0, 257))
+        # 1..256: read_sbi_capture skips empty TCP payloads, so an empty
+        # input would return zero messages and the assertion below would
+        # pass vacuously — never exercising the contract.
+        data = rng.randbytes(rng.randrange(1, 257))
         pcap = tmp_path / f"sbi_noise_{i}.pcap"
         wrpcap(str(pcap), [_segment(CLIENT, 40000, SERVER, SBI_PORT, data)])
         for msg in _decode_or_fail(read_sbi_capture, str(pcap),
@@ -139,7 +142,10 @@ def test_sbi_fuzz_smoke(tmp_path):
     reset = _reset_client_stream()
     baselines = (c2s, reset)
     for i in range(MUTATED_PER_DECODER):
-        data = _mutate(rng, baselines[i % 2])
+        # Truncation can cut a baseline to empty; a 1-byte payload keeps the
+        # capture from returning zero messages (same vacuity as the noise
+        # loop above).
+        data = _mutate(rng, baselines[i % 2]) or b"\x00"
         pcap = tmp_path / f"sbi_mutated_{i}.pcap"
         wrpcap(str(pcap), [_segment(CLIENT, 40000, SERVER, SBI_PORT, data)])
         for msg in _decode_or_fail(read_sbi_capture, str(pcap),

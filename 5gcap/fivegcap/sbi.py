@@ -173,6 +173,11 @@ def _decode_connection(conn: frozenset,
                         name=req.name if req else None,
                         conn=conn, src_ip=ep[0], dst_ip=ep[2],
                         src_port=ep[1], dst_port=ep[3])
+                    if req is not None and rec.name is None:
+                        # A response to a refused request (e.g. one its
+                        # client reset) is refused too: copying the cleared
+                        # name would leave it neither decoded nor refused.
+                        rec.unparsed = f"response to refused request: {req.unparsed}"
                     responses[e.stream_id] = rec
                     msgs.append(rec)
                 elif isinstance(e, DataReceived):

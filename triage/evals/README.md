@@ -2,8 +2,7 @@
 
 The offline eval harness for `type_accuracy` and `diagnosis_quality`
 (CONTEXT.md), over the nine labeled failure-injection fixtures in
-`5gcap/tests/fixtures/` — the two `sbi_*` and one `n4_upf_timeout` fixtures
-join the run only once their sandbox pcaps exist. Runs explicitly — never
+`5gcap/tests/fixtures/` — all nine enabled. Runs explicitly — never
 inside the default pytest suite, because every fixture run costs real Groq
 calls (ADR-0002).
 

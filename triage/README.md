@@ -23,8 +23,7 @@ invocation, decision by decision, is in
 ## Layout
 
 - `triage/` — the package (tools, LATS search, CoALA memory, CLI, the
-  deterministic post-incident report writer; grows across the
-  implementation steps)
+  deterministic post-incident report writer)
 - `triage/report.py` — deterministic post-incident report writer
   (ADR-0004): Markdown over a triage run, assembled from the saved
   results plus the decode
@@ -137,9 +136,7 @@ the `triage analyze` CLI (Incident detection over 5gcap's decode output,
 one LATS search per Incident, hypotheses as JSON on stdout), and the
 offline eval harness (`evals/run_eval.py`: type_accuracy and
 diagnosis_quality over the labeled fixtures — the six N2 scenarios plus
-the two sbi_* and one n4_upf_timeout ones, which join the run once their
-sandbox pcaps exist —
-with the judge on a model
+the two sbi_* and one n4_upf_timeout ones — with the judge on a model
 distinct from the generator), and the post-incident report writer
 (`triage/report.py`, ADR-0004: deterministic Markdown over a saved run —
 the Episode's narrative verbatim, evidence re-verified against the decode,

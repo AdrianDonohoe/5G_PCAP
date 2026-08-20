@@ -479,6 +479,88 @@ def test_timeline_cap_50():
     assert "... (1 more not shown)" in report
 
 
+# --- endpoint entity attribution ---------------------------------------
+
+
+def test_n2_attribution_named_and_flipped():
+    capture = DecodedCapture(n2={"flows": [{
+        "flow_id": 1,
+        "messages": [
+            {"ts": 10.0, "ngap": "InitialUEMessage",
+             "nas_inner": "5GMMRegistrationRequest",
+             "src_ip": "10.53.0.20", "dst_ip": "10.53.0.11"},
+            {"ts": 11.0, "ngap": "DownlinkNASTransport",
+             "nas_inner": "5GMMAuthenticationRequest",
+             "src_ip": "10.53.0.11", "dst_ip": "10.53.0.20"},
+        ],
+    }]})
+    report = build_report([saved_run()], capture)
+    assert ("[1] 10.000s  5GMMRegistrationRequest over N2 "
+            "from gNB (10.53.0.20) to AMF (10.53.0.11)") in report
+    assert ("[2] 11.000s  5GMMAuthenticationRequest over N2 "
+            "from AMF (10.53.0.11) to gNB (10.53.0.20)") in report
+
+
+def test_n2_evidence_attribution_from_decode():
+    capture = DecodedCapture(n2={"flows": [{
+        "flow_id": 1,
+        "messages": [
+            {"ts": 12.345, "ngap": "UplinkNASTransport",
+             "nas_inner": "5GMMAuthenticationFailure",
+             "nas_cause": {"code": 21, "name": "Synch failure"},
+             "src_ip": "10.53.0.20", "dst_ip": "10.53.0.11"},
+        ],
+    }]})
+    report = build_report([saved_run()], capture)
+    assert ("- [verified] 5GMMAuthenticationFailure over N2 "
+            "from gNB (10.53.0.20) to AMF (10.53.0.11) @ 12.345s "
+            "— cause #21") in report
+
+
+def test_n2_ambiguous_direction_addresses_only():
+    # ErrorIndication may be sent by either side: no entities, ever
+    capture = DecodedCapture(n2={"flows": [{
+        "flow_id": 1,
+        "messages": [
+            {"ts": 10.0, "ngap": "ErrorIndication",
+             "src_ip": "10.53.0.11", "dst_ip": "10.53.0.20"},
+        ],
+    }]})
+    report = build_report([saved_run()], capture)
+    assert ("[1] 10.000s  ErrorIndication over N2 "
+            "from 10.53.0.11 to 10.53.0.20") in report
+
+
+def test_n2_message_without_addresses_gets_no_attribution():
+    capture = DecodedCapture(n2={"flows": [{
+        "flow_id": 1,
+        "messages": [{"ts": 10.0, "ngap": "InitialUEMessage",
+                      "nas_inner": "5GMMRegistrationRequest"}],
+    }]})
+    report = build_report([saved_run()], capture)
+    assert "[1] 10.000s  5GMMRegistrationRequest\n" in report
+
+
+def test_sbi_unknown_service_addresses_only():
+    capture = DecodedCapture(n2={}, sbi={
+        "messages": [{
+            "ts": 2.0, "src_ip": "10.0.0.3", "dst_ip": "10.0.0.4",
+            "src_port": 50002, "dst_port": 7777, "stream_id": 1,
+            "direction": "request", "method": "POST",
+            "path": "/nxyz-service/v1/things",
+            "status": None, "body_len": 12,
+            "service": "Nxyz_Service", "name": "Nxyz_Service",
+            "problem_title": None, "problem_cause": None,
+            "unparsed": None}]})
+    result = saved_sbi_run(procedure="Nxyz_Service",
+                           shape="no terminal message (timeout)",
+                           detail=None)
+    report = build_report([result], capture)
+    assert ("[1] 2.000s  POST /nxyz-service/v1/things over SBI "
+            "from 10.0.0.3 to 10.0.0.4 -> no response  "
+            "(Nxyz_Service)") in report
+
+
 def test_search_path_truncates_first_line():
     long_obs = "x" * 100
     result = saved_run(trajectory=[["inspect flows", long_obs + "\nmore"]])
@@ -543,11 +625,11 @@ EXPECTED_SBI_SINGLE = """\
 The NSSF answered the slice consult with 403: no NSI for S-NSSAI SST:1.
 
 ## Evidence
-- [verified] Nnssf_NSSelection @ 1.234s
+- [verified] Nnssf_NSSelection over SBI from NSSF (10.0.0.4) to 10.0.0.3 @ 1.234s
 
 ## Timeline (SBI)
-[1] 1.000s  GET /nnssf-nsselection/v1/network-slice-information -> 403  (Nnssf_NSSelection)
-[2] 1.234s  -> 403  (Nnssf_NSSelection)
+[1] 1.000s  GET /nnssf-nsselection/v1/network-slice-information over SBI from 10.0.0.3 to NSSF (10.0.0.4) -> 403  (Nnssf_NSSelection)
+[2] 1.234s  -> 403 over SBI from NSSF (10.0.0.4) to 10.0.0.3  (Nnssf_NSSelection)
 
 ## Capture KPIs
 (no KPIs in this capture)
@@ -583,6 +665,7 @@ def test_sbi_timeline_unanswered_request():
     report = build_report([result], capture)
     assert "## Timeline (SBI)" in report
     assert ("[1] 2.000s  POST /nudm-ueau/v1/ue-authentications "
+            "over SBI from 10.0.0.3 to UDM (10.0.0.4) "
             "-> no response  (Nudm_UEAuthentication)") in report
     assert "**Incident detail:**" not in report
 
@@ -700,10 +783,10 @@ EXPECTED_N4_SINGLE = """\
 The UPF never answered the SMF's Session Establishment Request.
 
 ## Evidence
-- [verified] PFCP Session Establishment Request @ 1.000s
+- [verified] PFCP Session Establishment Request over N4 from SMF (10.0.0.1) to UPF (10.0.0.2) @ 1.000s
 
 ## Timeline (N4)
-[1] 1.000s  PFCP Session Establishment Request -> no response
+[1] 1.000s  PFCP Session Establishment Request over N4 from SMF (10.0.0.1) to UPF (10.0.0.2) -> no response
 
 ## Capture KPIs
 (no KPIs in this capture)
@@ -738,9 +821,11 @@ def test_n4_timeline_answered_request():
     report = build_report([result], capture)
     assert "## Timeline (N4)" in report
     assert ("[1] 1.000s  PFCP Session Establishment Request "
+            "over N4 from SMF (10.0.0.1) to UPF (10.0.0.2) "
             "-> No resources available") in report
     assert ("[2] 1.200s  -> No resources available "
-            "(PFCP Session Establishment Response)") in report
+            "(PFCP Session Establishment Response "
+            "over N4 from UPF (10.0.0.2) to SMF (10.0.0.1))") in report
 
 
 def test_n4_timeline_answered_no_cause():
@@ -756,8 +841,10 @@ def test_n4_timeline_answered_no_cause():
          "name": "PFCP Heartbeat Response", "seq": 5,
          "seid": None, "cause": None, "cause_code": None, "unparsed": None}]})
     report = build_report([saved_n4_run()], capture)
-    assert "[1] 1.000s  PFCP Heartbeat Request -> answered" in report
-    assert "[2] 1.100s  -> ? (PFCP Heartbeat Response)" in report
+    assert ("[1] 1.000s  PFCP Heartbeat Request over N4 "
+            "from 10.0.0.1 to 10.0.0.2 -> answered") in report
+    assert ("[2] 1.100s  -> ? (PFCP Heartbeat Response over N4 "
+            "from 10.0.0.2 to 10.0.0.1)") in report
 
 
 def test_n4_evidence_unverified_without_n4_loaded():

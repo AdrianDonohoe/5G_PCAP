@@ -85,7 +85,12 @@ The deterministic Markdown artifact assembled from a saved triage run plus
 the decode: the Episode's narrative verbatim, cited evidence re-verified
 against the decode, spec-graph context, the flow timeline, capture KPIs,
 the search path, and the memory note. The only LLM prose in it is the
-Episode's narrative (ADR-0004).
+Episode's narrative (ADR-0004). Timeline and evidence lines attribute
+each message's endpoints (`over N2 from gNB (10.53.0.20) to AMF
+(10.53.0.11)`), naming entities only where the plane's own semantics
+determine them — N2 NGAP message direction, N4 PFCP request/response
+type, SBI service producer; otherwise the endpoints appear as bare
+addresses, never guessed.
 _Avoid_: writeup, summary, debrief
 
 **type_accuracy**:

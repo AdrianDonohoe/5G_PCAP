@@ -1,10 +1,10 @@
 <!--
-Sample output of `triage analyze --report` over the sandbox `auth_failure`
-scenario capture (5gcap/tests/fixtures/auth_failure.pcap), generated
-2026-08-20. The report below is the writer's output verbatim except for
-this note, so visitors can see a post-incident report without running the
-stack. Live runs need GROQ_API_KEY; `triage report --results` re-renders
-any saved run offline.
+Sample output over the sandbox `auth_failure` scenario capture
+(5gcap/tests/fixtures/auth_failure.pcap), re-rendered 2026-08-20 via
+`triage report --results` from a saved `triage analyze` run. The report
+below is the writer's output verbatim except for this note, so visitors
+can see a post-incident report without running the stack. Live runs need
+GROQ_API_KEY; `triage report --results` re-renders any saved run offline.
 -->
 
 # Post-incident report — auth_failure
@@ -17,8 +17,8 @@ any saved run offline.
 Authentication synchronization failure caused the registration to be rejected.
 
 ## Evidence
-- [verified] 5GMMAuthenticationFailure @ 1786968770.968s — cause #21
-- [verified] 5GMMRegistrationReject @ 1786968770.989s — cause #111
+- [verified] 5GMMAuthenticationFailure over N2 from gNB (10.53.0.20) to AMF (10.53.0.11) @ 1786968770.968s — cause #21
+- [verified] 5GMMRegistrationReject over N2 from AMF (10.53.0.11) to gNB (10.53.0.20) @ 1786968770.989s — cause #111
 
 ## Spec context
 entity 5GMM cause #21 "Synch failure"
@@ -46,11 +46,11 @@ entity REGISTRATION REJECT (message, from text)
 
 
 ## Timeline (flow 1)
-[1] 1786968770.955s  5GMMRegistrationRequest
-[2] 1786968770.967s  5GMMAuthenticationRequest
-[3] 1786968770.968s  5GMMAuthenticationFailure  cause #21 (Synch failure)
-[4] 1786968770.989s  5GMMRegistrationReject  cause #111 (Protocol error, unspecified)
-[5] 1786968770.991s  UEContextReleaseComplete
+[1] 1786968770.955s  5GMMRegistrationRequest over N2 from gNB (10.53.0.20) to AMF (10.53.0.11)
+[2] 1786968770.967s  5GMMAuthenticationRequest over N2 from AMF (10.53.0.11) to gNB (10.53.0.20)
+[3] 1786968770.968s  5GMMAuthenticationFailure over N2 from gNB (10.53.0.20) to AMF (10.53.0.11)  cause #21 (Synch failure)
+[4] 1786968770.989s  5GMMRegistrationReject over N2 from AMF (10.53.0.11) to gNB (10.53.0.20)  cause #111 (Protocol error, unspecified)
+[5] 1786968770.991s  UEContextReleaseComplete over N2 from gNB (10.53.0.20) to AMF (10.53.0.11)
 
 ## Capture KPIs
 attach_time_ms: 33.95835558573405 | pdu_session_time_ms: 104.17592525482178 | procedure_success_rate: 0.8 | procedure_successes: 4 | procedure_failures: 1

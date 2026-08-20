@@ -6,7 +6,10 @@ formats everything else: incident headers, [verified] evidence (re-checked
 against the decode via grounded_evidence — the same completeness-bar
 semantics the search enforced), spec-graph context blocks (ADR-0003), the
 flow timeline, capture KPIs, the winning search trajectory, and the
-memory-write note.
+memory-write note. Timeline and evidence lines attribute each message's
+endpoints (`over N2 from gNB (…) to AMF (…)`), naming entities only when
+the plane's semantics determine them and showing endpoints bare otherwise
+(see the direction tables below).
 
 Two CLI paths share this module: `triage analyze --report` writes it
 in-process, and the standalone `triage report` subcommand re-renders it
@@ -28,6 +31,140 @@ MAX_SPEC_BLOCKS = 6
 KPI_ORDER = ("attach_time_ms", "pdu_session_time_ms",
              "procedure_success_rate", "procedure_successes",
              "procedure_failures")
+
+
+# --- endpoint entity attribution --------------------------------------
+# A report names a message's endpoint entities only when the plane's
+# message semantics determine them — the same never-a-guess principle as
+# ADR-0007's correlation: N2 from the NGAP message direction, N4 from the
+# PFCP request/response type, SBI from the service's producer (3GPP's
+# N<service> naming). Where the semantics don't determine an entity, its
+# endpoint address appears bare; messages without an endpoint pair get no
+# attribution at all.
+
+_N2_DIRECTIONS = {
+    # gNB -> AMF
+    "InitialUEMessage": ("gNB", "AMF"),
+    "UplinkNASTransport": ("gNB", "AMF"),
+    "InitialContextSetupResponse": ("gNB", "AMF"),
+    "InitialContextSetupFailure": ("gNB", "AMF"),
+    "UEContextReleaseRequest": ("gNB", "AMF"),
+    "UEContextReleaseComplete": ("gNB", "AMF"),
+    "PDUSessionResourceSetupResponse": ("gNB", "AMF"),
+    "PDUSessionResourceReleaseResponse": ("gNB", "AMF"),
+    "PDUSessionResourceModifyResponse": ("gNB", "AMF"),
+    "HandoverRequired": ("gNB", "AMF"),
+    "PathSwitchRequest": ("gNB", "AMF"),
+    "UplinkRANConfigurationTransfer": ("gNB", "AMF"),
+    "NGSetupRequest": ("gNB", "AMF"),
+    # AMF -> gNB
+    "DownlinkNASTransport": ("AMF", "gNB"),
+    "InitialContextSetupRequest": ("AMF", "gNB"),
+    "UEContextReleaseCommand": ("AMF", "gNB"),
+    "PDUSessionResourceSetupRequest": ("AMF", "gNB"),
+    "PDUSessionResourceReleaseCommand": ("AMF", "gNB"),
+    "PDUSessionResourceModifyRequest": ("AMF", "gNB"),
+    "Paging": ("AMF", "gNB"),
+    "NASNonDeliveryIndication": ("AMF", "gNB"),
+    "RerouteNASRequest": ("AMF", "gNB"),
+    "NGSetupResponse": ("AMF", "gNB"),
+    "PathSwitchRequestAcknowledge": ("AMF", "gNB"),
+    "DownlinkRANConfigurationTransfer": ("AMF", "gNB"),
+}
+# Anything else (ErrorIndication, NGReset, UEContextModificationRequest,
+# the handover RANStatusTransfer/NRPPa transports...) may be sent by
+# either side: entities stay unnamed.
+
+_N4_DIRECTIONS = {
+    "PFCP Session Establishment Request": ("SMF", "UPF"),
+    "PFCP Session Establishment Response": ("UPF", "SMF"),
+    "PFCP Session Report Request": ("UPF", "SMF"),
+    "PFCP Session Report Response": ("SMF", "UPF"),
+    "PFCP Node Report Request": ("UPF", "SMF"),
+    "PFCP Node Report Response": ("SMF", "UPF"),
+}
+# Modification/Deletion/Heartbeat/Association requests may come from
+# either function: entities stay unnamed.
+
+_SBI_PRODUCERS = {
+    "namf": "AMF", "nsmf": "SMF", "nudm": "UDM", "nausf": "AUSF",
+    "nnssf": "NSSF", "nnrf": "NRF", "npcf": "PCF", "nudr": "UDR",
+    "nbsf": "BSF", "nef": "NEF", "naf": "AF", "nsmsf": "SMSF",
+}
+
+
+def _fmt_attribution(plane: str, src_ent: str | None, dst_ent: str | None,
+                     src_ip, dst_ip) -> str:
+    """' over N2 from gNB (10.53.0.20) to AMF (10.53.0.11)'; entity slots
+    appear only when determined, endpoints otherwise bare; '' when the
+    message carries no endpoint pair."""
+    if src_ip is None or dst_ip is None:
+        return ""
+    src = f"{src_ent} ({src_ip})" if src_ent else str(src_ip)
+    dst = f"{dst_ent} ({dst_ip})" if dst_ent else str(dst_ip)
+    return f" over {plane} from {src} to {dst}"
+
+
+def _n2_attribution(msg: dict) -> str:
+    pair = _N2_DIRECTIONS.get(msg.get("ngap"))
+    return _fmt_attribution("N2", *(pair or (None, None)),
+                            msg.get("src_ip"), msg.get("dst_ip"))
+
+
+def _sbi_producer(msg: dict) -> str | None:
+    """The service's producer NF, from its name/service prefix."""
+    for name in (msg.get("name"), msg.get("service")):
+        if not name:
+            continue
+        lower = name.lower()
+        for prefix, producer in sorted(_SBI_PRODUCERS.items(),
+                                       key=lambda kv: -len(kv[0])):
+            if lower.startswith(prefix):
+                return producer
+    return None
+
+
+def _sbi_attribution(msg: dict) -> str:
+    producer = _sbi_producer(msg)
+    if msg.get("direction") == "response":
+        return _fmt_attribution("SBI", producer, None,
+                                msg.get("src_ip"), msg.get("dst_ip"))
+    return _fmt_attribution("SBI", None, producer,
+                            msg.get("src_ip"), msg.get("dst_ip"))
+
+
+def _n4_attribution(msg: dict) -> str:
+    pair = _N4_DIRECTIONS.get(msg.get("name"))
+    return _fmt_attribution("N4", *(pair or (None, None)),
+                            msg.get("src_ip"), msg.get("dst_ip"))
+
+
+def _locate_message(capture: DecodedCapture, name: str, ts):
+    """(plane, msg dict) for the decode's message matching (name, ts), or
+    (None, None) — the evidence-lookup inventory, returning the record
+    instead of the cause."""
+    if ts is None or name is None:
+        return None, None
+    for flow in capture.n2.get("flows") or []:
+        for msg in flow.get("messages") or []:
+            if name in (msg.get("ngap"), msg.get("nas"),
+                        msg.get("nas_inner")) \
+                    and msg.get("ts") is not None \
+                    and abs(msg["ts"] - ts) < 5e-4:
+                return "n2", msg
+    for msg in capture.n2.get("unassociated") or []:
+        if msg.get("ngap") == name and msg.get("ts") is not None \
+                and abs(msg["ts"] - ts) < 5e-4:
+            return "n2", msg
+    for msg in (capture.n4 or {}).get("messages") or []:
+        if msg.get("name") == name and msg.get("ts") is not None \
+                and abs(msg["ts"] - ts) < 5e-4:
+            return "n4", msg
+    for msg in (capture.sbi or {}).get("messages") or []:
+        if msg.get("name") == name and msg.get("ts") is not None \
+                and abs(msg["ts"] - ts) < 5e-4:
+            return "sbi", msg
+    return None, None
 
 
 def load_graph() -> object | None:
@@ -162,6 +299,10 @@ def _sections(result: dict, capture: DecodedCapture, graph,
         for message, cause, ts, verified in cited:
             line = f"- [{'verified' if verified else 'unverified'}] " \
                    f"{message or '?'}"
+            plane, msg = _locate_message(capture, message, ts)
+            if msg is not None:
+                line += {"n2": _n2_attribution, "sbi": _sbi_attribution,
+                         "n4": _n4_attribution}[plane](msg)
             if ts is not None:
                 line += f" @ {fmt_ts(ts)}s"
             if cause is not None:
@@ -287,7 +428,7 @@ def _timeline_lines(capture: DecodedCapture, flow_id) -> list[str]:
     lines = []
     for i, msg in enumerate(flow.get("messages") or [], 1):
         name = msg.get("nas_inner") or msg.get("nas") or msg.get("ngap") or "?"
-        line = f"[{i}] {fmt_ts(msg.get('ts'))}s  {name}"
+        line = f"[{i}] {fmt_ts(msg.get('ts'))}s  {name}{_n2_attribution(msg)}"
         cause = msg.get("nas_cause")
         if cause:
             line += f"  cause #{cause.get('code')} ({cause.get('name')})"
@@ -319,11 +460,12 @@ def _sbi_timeline_lines(capture: DecodedCapture) -> list[str]:
                                  msg.get("stream_id")))
             status = rsp.get("status") if rsp is not None else None
             outcome = str(status) if status is not None else "no response"
-            line += f"{msg.get('method') or '?'} {msg.get('path') or '?'} " \
-                    f"-> {outcome}"
+            line += f"{msg.get('method') or '?'} {msg.get('path') or '?'}" \
+                    f"{_sbi_attribution(msg)} -> {outcome}"
         else:
             status = msg.get("status")
-            line += f"-> {status if status is not None else '?'}"
+            line += f"-> {status if status is not None else '?'}" \
+                    f"{_sbi_attribution(msg)}"
         line += f"  ({msg.get('name') or '?'})"
         lines.append(line)
     return lines
@@ -355,10 +497,11 @@ def _n4_timeline_lines(capture: DecodedCapture) -> list[str]:
                 outcome = "no response"
             else:
                 outcome = rsp.get("cause") or "answered"
-            line += f"{name} -> {outcome}"
+            line += f"{name}{_n4_attribution(msg)} -> {outcome}"
         else:
             cause = msg.get("cause")
-            line += f"-> {cause if cause is not None else '?'} ({name})"
+            line += f"-> {cause if cause is not None else '?'} " \
+                    f"({name}{_n4_attribution(msg)})"
         lines.append(line)
     return lines
 

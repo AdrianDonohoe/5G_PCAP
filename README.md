@@ -14,7 +14,9 @@ procedures with an LLM agent.
   5gcap's decode output (LATS search, episodic memory, 3GPP spec graph; on
   the merged export, joined SBI/N4 Incidents carry their flow id), a
   deterministic post-incident report writer, and an offline eval harness
-  scored against labeled sandbox fixtures. See
+  scored against labeled sandbox fixtures. A sample post-incident report
+  from a live run is in
+  [`triage/examples/`](triage/examples/auth_failure-report.md). See
   [`triage/README.md`](triage/README.md).
 - [`sandbox/`](sandbox/) — local Open5GS + UERANSIM lab that generates real
   captures for `5gcap` and labeled failure-injection scenario fixtures

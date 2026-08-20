@@ -35,6 +35,11 @@ invocation, decision by decision, is in
   diagnosis_quality over the labeled fixtures; real Groq calls, run
   explicitly, never inside pytest); the latest committed run is recorded
   in [RESULTS.md](./RESULTS.md)
+- `examples/` — a checked-in sample post-incident report
+  ([auth_failure-report.md](./examples/auth_failure-report.md)) from a live
+  `triage analyze --report` run over the `auth_failure` fixture; live runs
+  need `GROQ_API_KEY`, while `triage report --results` re-renders any saved
+  run offline
 - `scripts/build_corpus.py` — one-time 3GPP spec fetch/chunk (see Development)
 - `corpus/` — committed chunks.jsonl + manifest.json for the
   query_3gpp_spec tool; `corpus/cache/` (zips, embedding index, and the

@@ -11,7 +11,7 @@ jobs:
       # Full history: gitleaks-action v2 scans every pushed commit
       # (first-commit^..head); a depth-1 clone lacks the base and the
       # scan fails with "unknown revision".
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Install uv

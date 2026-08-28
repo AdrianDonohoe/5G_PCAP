@@ -1,0 +1,174 @@
+"""The Incident Manager graph: the tracer spine of the dispatch layer.
+
+Deterministic pipeline: gather (validated event + stubbed evidence) →
+correlate → investigate (stub root cause) → propose (stub proposal,
+template-rendered commands, hash) → approval interrupt → execute on
+resume. Checkpointed to sqlite, so approve/reject resume in a fresh
+process. Groq-free by design — canned stubs stand in for the specialist
+agents until #26–#28 land."""
+
+import re
+import sqlite3
+from pathlib import Path
+from typing import TypedDict
+
+from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.graph import END, START, StateGraph
+from langgraph.types import Command, interrupt
+
+from .correlation import link
+from .evidence import AlarmEvent, EvidenceItem
+from .executor import Executor, OBSERVE_ONLY_NOTE, proposal_hash
+from .record import render_record
+
+_HASH_RE = re.compile(r"Proposal hash: `([0-9a-f]+)`")
+
+
+class State(TypedDict, total=False):
+    event: dict
+    stub: dict
+    evidence: list
+    links: list
+    root_cause: str
+    proposal: dict
+    record_path: str
+    decision: str
+    execute: bool
+    approval: str
+    execution_log: list
+
+
+def _config(incident_id: str) -> dict:
+    return {"configurable": {"thread_id": incident_id}}
+
+
+def _validate_stub(stub: dict) -> dict:
+    for field in ("evidence", "root_cause", "proposal"):
+        if field not in stub:
+            raise ValueError(f"stub missing {field!r}")
+    return {
+        "evidence": [EvidenceItem.model_validate(item).model_dump()
+                     for item in stub["evidence"]],
+        "root_cause": stub["root_cause"],
+        "proposal": dict(stub["proposal"]),
+    }
+
+
+def _write_record(state: State, approval: str, log_lines: list[str]) -> None:
+    state["approval"] = approval
+    state["execution_log"] = state.get("execution_log", []) + log_lines
+    Path(state["record_path"]).write_text(render_record({
+        "event": state["event"],
+        "evidence": state["evidence"],
+        "links": state["links"],
+        "root_cause": state["root_cause"],
+        "proposal": state["proposal"],
+        "approval": approval,
+        "execution_log": state["execution_log"],
+    }))
+
+
+def _read_record_hash(path: str) -> str:
+    match = _HASH_RE.search(Path(path).read_text())
+    if not match:
+        raise ValueError("proposal hash mismatch — the record has no hash")
+    return match.group(1)
+
+
+def build_graph(state_path, records_dir, sandbox_root, runner=None):
+    """Compile the Incident Manager graph with a sqlite checkpointer. The
+    checkpointer's connection lives as long as the compiled graph."""
+    records_dir = Path(records_dir)
+    records_dir.mkdir(parents=True, exist_ok=True)
+    Path(state_path).parent.mkdir(parents=True, exist_ok=True)
+    executor = Executor(sandbox_root, runner=runner)
+
+    def gather(state: State) -> State:
+        event = AlarmEvent.model_validate(state["event"])
+        state["event"] = event.model_dump()
+        state["stub"] = _validate_stub(state["stub"])
+        state["evidence"] = state["stub"]["evidence"]
+        state["record_path"] = str(records_dir / f"{event.incident_id}.md")
+        return state
+
+    def correlate(state: State) -> State:
+        window = state["event"]["time_window"]
+        state["links"] = link(state["evidence"],
+                              (window["start"], window["end"]))
+        return state
+
+    def investigate(state: State) -> State:
+        state["root_cause"] = state["stub"]["root_cause"]
+        return state
+
+    def propose(state: State) -> State:
+        proposal = state["stub"]["proposal"]
+        proposal["commands"] = executor.dry_run(proposal)
+        proposal["hash"] = proposal_hash(proposal)
+        state["proposal"] = proposal
+        _write_record(state, "pending", [])
+        return state
+
+    def approval(state: State) -> State:
+        payload = interrupt({"pending": True})
+        state["decision"] = payload["decision"]
+        state["execute"] = bool(payload.get("execute", False))
+        return state
+
+    def execute(state: State) -> State:
+        proposal = state["proposal"]
+        if _read_record_hash(state["record_path"]) != proposal["hash"]:
+            raise ValueError("proposal hash mismatch — the record was edited")
+        if state["decision"] == "reject":
+            _write_record(state, "rejected",
+                          ["rejected: no commands applied"])
+            return state
+        commands = [c for c in proposal["commands"]
+                    if c != OBSERVE_ONLY_NOTE]
+        log = ([f"dry-run: {c}" for c in commands]
+               or [f"dry-run: {OBSERVE_ONLY_NOTE}"])
+        if state["execute"]:
+            executor.apply(proposal, commands)
+            log += [f"executed: {c}" for c in commands]
+            _write_record(state, "approved-executed", log)
+        else:
+            _write_record(state, "approved-dry-run", log)
+        return state
+
+    graph = StateGraph(State)
+    graph.add_node("gather", gather)
+    graph.add_node("correlate", correlate)
+    graph.add_node("investigate", investigate)
+    graph.add_node("propose", propose)
+    graph.add_node("approval", approval)
+    graph.add_node("execute", execute)
+    graph.add_edge(START, "gather")
+    graph.add_edge("gather", "correlate")
+    graph.add_edge("correlate", "investigate")
+    graph.add_edge("investigate", "propose")
+    graph.add_edge("propose", "approval")
+    graph.add_edge("approval", "execute")
+    graph.add_edge("execute", END)
+    conn = sqlite3.connect(str(state_path), check_same_thread=False)
+    return graph.compile(checkpointer=SqliteSaver(conn))
+
+
+def run_to_approval(cg, event: dict, stub: dict):
+    """Run a new Alarm event through the graph to the approval interrupt."""
+    return cg.invoke({"event": event, "stub": stub},
+                     _config(event["incident_id"]))
+
+
+def run_approval(cg, incident_id: str, decision: str,
+                 execute: bool = False):
+    """Resume a checkpointed incident with an approval decision."""
+    if decision not in ("approve", "reject"):
+        raise ValueError(f"unknown decision {decision!r}")
+    config = _config(incident_id)
+    snapshot = cg.get_state(config)
+    if snapshot.next == () and not snapshot.values:
+        raise ValueError(f"no checkpoint for incident {incident_id}")
+    if snapshot.next == ():
+        raise ValueError(f"incident {incident_id} is not awaiting approval")
+    return cg.invoke(Command(resume={"decision": decision,
+                                     "execute": execute}), config)

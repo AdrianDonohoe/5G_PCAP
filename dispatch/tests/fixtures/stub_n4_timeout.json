@@ -1,0 +1,40 @@
+{
+  "evidence": [
+    {
+      "source": "pcap",
+      "kind": "N4 session establishment request unanswered",
+      "ts": 1749999950.0,
+      "entry": "PFCP Session Establishment Request (Sx) to UPF with no response by capture end",
+      "cause": null,
+      "endpoints": ["10.53.0.11:8805", "10.53.0.13:8805"],
+      "keys": {"teid": "0x12345678", "nf": "upf"},
+      "citation": "n4_upf_timeout_n4.pcap frame 42"
+    },
+    {
+      "source": "log",
+      "kind": "UPF stuck",
+      "ts": 1749999952.0,
+      "entry": "upf.log: failed to allocate PDR, out of memory",
+      "cause": null,
+      "endpoints": null,
+      "keys": {"nf": "upf"},
+      "citation": "sandbox/core/log/upf.log:1833"
+    },
+    {
+      "source": "kpi",
+      "kind": "N4 latency missing",
+      "ts": 1749999960.0,
+      "entry": "n4_to_n2_ms excluded: no N4 establishment response",
+      "cause": null,
+      "endpoints": null,
+      "keys": {"flow_id": 1},
+      "citation": "kpi.n4_to_n2_ms"
+    }
+  ],
+  "root_cause": "The UPF failed to allocate a PDR for the session (upf.log line 1833), so the PFCP Session Establishment Request never got an answer and the N4 leg of the PDU session setup never completed.",
+  "proposal": {
+    "action": "restart_nf",
+    "args": {"nf": "upf"},
+    "justification": "Restarting the UPF clears the stuck PDR allocation state and lets the session establishment retry."
+  }
+}

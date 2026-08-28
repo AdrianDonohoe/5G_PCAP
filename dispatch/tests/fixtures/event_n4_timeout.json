@@ -1,0 +1,9 @@
+{
+  "incident_id": "inc-n4-upf-timeout-1",
+  "detected_at": 1750000000.0,
+  "source": "human",
+  "procedure": "n4_upf_timeout",
+  "time_window": {"start": 1749999900.0, "end": 1750000100.0},
+  "description": "UE1's PDU session establishment hangs: the SMF sends a PFCP Session Establishment Request to the UPF and no response arrives.",
+  "captures": {"n4": "n4_upf_timeout_n4.pcap"}
+}

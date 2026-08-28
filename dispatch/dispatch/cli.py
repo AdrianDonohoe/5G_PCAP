@@ -1,14 +1,27 @@
 """dispatch CLI: event-driven incident orchestration.
 
-The subcommands are the Dispatcher's public interface, reserved here so the
---help surface is stable while the behavior behind each lands in later
-slices: `handle` runs one Alarm event through the Dispatcher, `detect-kpi`
-compares capture KPIs against the Golden baseline, and `approve`/`reject`
-resume a checkpointed incident across invocations.
+Each invocation is a fresh process: `handle` runs one Alarm event through
+the Dispatcher and checkpoints at the approval interrupt; `approve` /
+`reject` resume that checkpoint from the sqlite store. `detect-kpi` is
+reserved here so the --help surface stays stable until its slice lands.
 """
 
 import argparse
+import json
 import sys
+from pathlib import Path
+
+from .evidence import AlarmEvent
+from .graph import build_graph, run_approval, run_to_approval
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+STATE_PATH = REPO_ROOT / "dispatch" / "state" / "checkpoints.sqlite"
+RECORDS_DIR = REPO_ROOT / "dispatch" / "records"
+SANDBOX_ROOT = REPO_ROOT / "sandbox"
+
+
+def _graph():
+    return build_graph(STATE_PATH, RECORDS_DIR, SANDBOX_ROOT)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -17,13 +30,65 @@ def main(argv: list[str] | None = None) -> int:
         description="Incident orchestration for the 5G_PCAP stack",
     )
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("handle", help="run one Alarm event through the Dispatcher")
-    sub.add_parser("detect-kpi", help="compare capture KPIs against the Golden baseline")
-    sub.add_parser("approve", help="resume a checkpointed incident and dry-run or apply its proposal")
-    sub.add_parser("reject", help="resume a checkpointed incident and record the rejection")
+
+    handle = sub.add_parser(
+        "handle", help="run one Alarm event through the Dispatcher")
+    handle.add_argument("event", help="path to an Alarm event JSON file")
+    handle.add_argument("--stub", help="path to the stubbed agent outputs JSON")
+
+    approve = sub.add_parser(
+        "approve",
+        help="resume a checkpointed incident and dry-run or apply its proposal")
+    approve.add_argument("incident_id")
+    approve.add_argument("--execute", action="store_true",
+                         help="apply the proposal's commands")
+
+    reject = sub.add_parser(
+        "reject", help="resume a checkpointed incident and record the rejection")
+    reject.add_argument("incident_id")
+
+    sub.add_parser(
+        "detect-kpi", help="compare capture KPIs against the Golden baseline")
+
     args = ap.parse_args(argv if argv is not None else sys.argv[1:])
+    try:
+        if args.cmd == "handle":
+            return _handle(args)
+        if args.cmd == "approve":
+            result = run_approval(_graph(), args.incident_id, "approve",
+                                  execute=args.execute)
+            for line in result.get("execution_log", []):
+                print(line)
+            return 0
+        if args.cmd == "reject":
+            result = run_approval(_graph(), args.incident_id, "reject")
+            for line in result.get("execution_log", []):
+                print(line)
+            return 0
+    except (ValueError, OSError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     print(f"dispatch {args.cmd}: not implemented yet", file=sys.stderr)
     return 1
+
+
+def _handle(args) -> int:
+    if not args.stub:
+        print("error: --stub is required (stubbed agent outputs JSON)",
+              file=sys.stderr)
+        return 1
+    event = json.loads(Path(args.event).read_text())
+    alarm = AlarmEvent.model_validate(event)
+    record = RECORDS_DIR / f"{alarm.incident_id}.md"
+    if record.exists():
+        print(f"error: incident {alarm.incident_id} already has a record",
+              file=sys.stderr)
+        return 1
+    stub = json.loads(Path(args.stub).read_text())
+    run_to_approval(_graph(), alarm.model_dump(), stub)
+    print(f"checkpointed — awaiting approval: "
+          f"dispatch approve {alarm.incident_id}")
+    return 0
 
 
 if __name__ == "__main__":

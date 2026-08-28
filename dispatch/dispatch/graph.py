@@ -3,11 +3,14 @@
 Deterministic pipeline: gather (validated event + stubbed evidence) →
 pcap agent (triage analyze over the decode, evidence grounded in the
 decode inventory, replacing the stub's pcap items) → kpi agent (real KPI
-evidence from 5gcap, replacing the stub's kpi items) → correlate →
-investigate (stub root cause) → propose (stub proposal, template-rendered
-commands, hash) → approval interrupt → execute on resume. Checkpointed to
-sqlite, so approve/reject resume in a fresh process. Groq-free by design —
-a canned stub stands in for the Log specialist until #28 lands."""
+evidence from 5gcap, replacing the stub's kpi items) → log agent (docker
+stdout logs for the window, LLM-extracted evidence grounded to exact log
+lines, replacing the stub's log items) → correlate → investigate (stub
+root cause) → propose (stub proposal, template-rendered commands, hash) →
+approval interrupt → execute on resume. Checkpointed to sqlite, so
+approve/reject resume in a fresh process. The specialists' subprocesses
+and the log extraction run behind stub seams (ADR-0002); only the root
+cause and proposal remain canned stubs (#29, #30)."""
 
 import re
 import sqlite3
@@ -22,6 +25,7 @@ from .correlation import link
 from .evidence import AlarmEvent, EvidenceItem
 from .executor import Executor, OBSERVE_ONLY_NOTE, proposal_hash
 from .kpi import run_kpi_agent
+from .log import run_log_agent
 from .pcap import run_pcap_agent
 from .record import render_record
 
@@ -44,6 +48,13 @@ class State(TypedDict, total=False):
 
 def _config(incident_id: str) -> dict:
     return {"configurable": {"thread_id": incident_id}}
+
+
+def _replace_evidence(state: State, source: str, items: list) -> None:
+    """Swap the stub evidence of one source for the specialist's real
+    items; stub items of other sources stay until their node runs."""
+    state["evidence"] = [e for e in state["evidence"]
+                         if e["source"] != source] + items
 
 
 def _validate_stub(stub: dict) -> dict:
@@ -80,11 +91,14 @@ def _read_record_hash(path: str) -> str:
 
 
 def build_graph(state_path, records_dir, sandbox_root, runner=None,
-                kpi_runner=None, triage_runner=None):
+                kpi_runner=None, triage_runner=None, log_runner=None,
+                extractor=None):
     """Compile the Incident Manager graph with a sqlite checkpointer. The
     checkpointer's connection lives as long as the compiled graph.
     ``kpi_runner`` stubs the 5gcap subprocess in tests; ``triage_runner``
-    stubs the triage analyze subprocess."""
+    stubs the triage analyze subprocess; ``log_runner`` stubs the docker
+    compose logs subprocess and ``extractor`` the log extraction (ADR-0002:
+    pytest never builds the Groq predictor)."""
     records_dir = Path(records_dir)
     records_dir.mkdir(parents=True, exist_ok=True)
     Path(state_path).parent.mkdir(parents=True, exist_ok=True)
@@ -99,19 +113,23 @@ def build_graph(state_path, records_dir, sandbox_root, runner=None,
         return state
 
     def pcap_agent(state: State) -> State:
-        stub_evidence = [e for e in state["evidence"]
-                         if e["source"] != "pcap"]
         captures = state["event"].get("captures") or {}
-        state["evidence"] = stub_evidence + run_pcap_agent(
-            captures, triage_runner=triage_runner)
+        _replace_evidence(state, "pcap",
+                          run_pcap_agent(captures,
+                                         triage_runner=triage_runner))
         return state
 
     def kpi_agent(state: State) -> State:
-        stub_evidence = [e for e in state["evidence"]
-                         if e["source"] != "kpi"]
         captures = state["event"].get("captures") or {}
-        state["evidence"] = stub_evidence + run_kpi_agent(
-            captures, runner=kpi_runner)
+        _replace_evidence(state, "kpi",
+                          run_kpi_agent(captures, runner=kpi_runner))
+        return state
+
+    def log_agent(state: State) -> State:
+        _replace_evidence(state, "log",
+                          run_log_agent(state["event"], sandbox_root,
+                                        log_runner=log_runner,
+                                        extractor=extractor))
         return state
 
     def correlate(state: State) -> State:
@@ -162,6 +180,7 @@ def build_graph(state_path, records_dir, sandbox_root, runner=None,
     graph.add_node("gather", gather)
     graph.add_node("pcap_agent", pcap_agent)
     graph.add_node("kpi_agent", kpi_agent)
+    graph.add_node("log_agent", log_agent)
     graph.add_node("correlate", correlate)
     graph.add_node("investigate", investigate)
     graph.add_node("propose", propose)
@@ -170,7 +189,8 @@ def build_graph(state_path, records_dir, sandbox_root, runner=None,
     graph.add_edge(START, "gather")
     graph.add_edge("gather", "pcap_agent")
     graph.add_edge("pcap_agent", "kpi_agent")
-    graph.add_edge("kpi_agent", "correlate")
+    graph.add_edge("kpi_agent", "log_agent")
+    graph.add_edge("log_agent", "correlate")
     graph.add_edge("correlate", "investigate")
     graph.add_edge("investigate", "propose")
     graph.add_edge("propose", "approval")

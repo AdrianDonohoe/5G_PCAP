@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import dispatch.kpi as kpi_mod
+import dispatch.log as log_mod
 import dispatch.pcap as pcap_mod
 
 
@@ -41,11 +42,25 @@ def make_triage_runner(results, calls=None, returncode=0):
     return fake
 
 
-def stub_subprocess_seams(monkeypatch):
-    """Blanket failing stubs for both specialist subprocess seams. The graph
-    and CLI tests that don't exercise a specialist explicitly must never
-    spawn a real 5gcap or triage process (ADR-0002); a failing seam degrades
-    both nodes to no evidence, which is their real failure behavior."""
+def make_log_runner(windowed_text, calls=None, returncode=0):
+    """A runner fake for the docker compose logs seam: returns the canned
+    windowed output on stdout."""
+    def fake(cmd, **kw):
+        if calls is not None:
+            calls.append(cmd)
+        return SimpleNamespace(returncode=returncode, stdout=windowed_text,
+                               stderr="")
+
+    return fake
+
+
+def stub_specialist_seams(monkeypatch):
+    """Blanket failing stubs for the specialist seams: the 5gcap, triage
+    and docker compose subprocess seams, plus the log extraction's live
+    default. Graph and CLI tests that don't exercise a specialist
+    explicitly must never spawn a real subprocess or build a Groq-backed
+    predictor (ADR-0002); a failing seam degrades the nodes to no
+    evidence, which is their real failure behavior."""
     def failing(cmd, **kw):
         return SimpleNamespace(returncode=1,
                                stderr="specialist subprocess stubbed",
@@ -53,3 +68,9 @@ def stub_subprocess_seams(monkeypatch):
 
     monkeypatch.setattr(kpi_mod.subprocess, "run", failing)
     monkeypatch.setattr(pcap_mod.subprocess, "run", failing)
+    monkeypatch.setattr(log_mod.subprocess, "run", failing)
+
+    def no_live_extractor():
+        raise RuntimeError("live log extraction stubbed (ADR-0002)")
+
+    monkeypatch.setattr(log_mod, "default_extract", no_live_extractor)

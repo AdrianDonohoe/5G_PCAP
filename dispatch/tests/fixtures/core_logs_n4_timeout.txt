@@ -1,0 +1,7 @@
+amf     | 2025-06-15T15:05:01.204153119Z [open5gs-amf] INFO [amf] [imsi-999700000000001:1:11] Nsmf_PDUSession CreateSMContext Request (../src/amf/nsmf-handler.c:578)
+smf     | 2025-06-15T15:05:01.501422838Z [open5gs-smf] INFO [smf] [imsi-999700000000001:1:11] PFCP[2] Send Session Establishment Request (../src/smf/pfcp-sm.c:44)
+upf     | 2025-06-15T15:05:01.510724553Z [open5gs-upf] INFO [upf] PFCP[0] Session Establishment Request (../src/upf/pfcp-sm.c:225)
+smf     | 2025-06-15T15:05:03.202591634Z [open5gs-smf] WARNING [smf] [imsi-999700000000001:1:11] Retransmit PFCP Session Establishment Request (../src/smf/pfcp-sm.c:60)
+upf     | 2025-06-15T15:05:03.210154552Z [open5gs-upf] INFO [upf] PFCP[0] Session Establishment Request (../src/upf/pfcp-sm.c:225)
+smf     | 2025-06-15T15:07:02.892410225Z [open5gs-smf] WARNING [smf] [imsi-999700000000001:1:11] Retransmit PFCP Session Establishment Request (../src/smf/pfcp-sm.c:60)
+upf     | 2025-06-15T15:07:02.900115223Z [open5gs-upf] INFO [upf] PFCP[0] Session Establishment Request (../src/upf/pfcp-sm.c:225)

@@ -2,12 +2,13 @@
 reject resume in a fresh graph instance across invocations. Groq-free."""
 
 import json
+import types
 from pathlib import Path
 
 import pytest
 
 import dispatch.kpi as kpi_mod
-from _helpers import make_kpi_runner, make_triage_runner
+from _helpers import make_kpi_runner, make_log_runner, make_triage_runner
 from dispatch.graph import build_graph, run_approval, run_to_approval
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -208,7 +209,11 @@ def test_pcap_node_replaces_stub_items_with_grounded_evidence(ctx, event, stub,
                   {"ts": 1749999950.0, "name": "PFCP Session Establishment "
                    "Request", "cause_code": None, "flow_id": None}]},
               "sbi": {"messages": []}}
-    monkeypatch.setattr(kpi_mod.subprocess, "run", make_kpi_runner(export))
+    # Patch the kpi module's subprocess reference (not the shared
+    # subprocess module, which the log seam also uses) so only the KPI
+    # agent's 5gcap command is captured.
+    monkeypatch.setattr(kpi_mod, "subprocess",
+                        types.SimpleNamespace(run=make_kpi_runner(export)))
     results = [{"plane": "n4", "flow_id": None, "procedure": "session_"
                 "establishment", "shape": "no terminal message (timeout)",
                 "detail": None, "episode": {
@@ -228,4 +233,32 @@ def test_pcap_node_replaces_stub_items_with_grounded_evidence(ctx, event, stub,
     assert "n4:1" in record
     assert "no response by capture end" not in record  # stub pcap replaced
     assert "FabricatedRequest" not in record  # hallucinated, never recorded
+    assert len(calls) == 1
+
+
+# --- the Log specialist node: real evidence replaces the stub's log items ---
+
+def test_log_node_replaces_stub_items_with_grounded_evidence(ctx, event,
+                                                             stub):
+    windowed = (FIXTURES / "core_logs_n4_timeout.txt").read_text()
+    line = ("upf     | 2025-06-15T15:05:01.510724553Z [open5gs-upf] INFO "
+            "[upf] PFCP[0] Session Establishment Request "
+            "(../src/upf/pfcp-sm.c:225)")
+
+    def extract(text, event):
+        return [{"kind": "request unanswered",
+                 "entry": "UPF logs the request but never answers",
+                 "keys": {"nf": "upf"}, "citation": line}]
+
+    calls = []
+    graph = build_graph(ctx["state_path"], ctx["records_dir"],
+                        ctx["sandbox_root"],
+                        log_runner=make_log_runner(windowed, calls),
+                        extractor=extract)
+    run_to_approval(graph, event, stub)
+    record = (ctx["records_dir"] / f'{event["incident_id"]}.md').read_text()
+    assert line in record                # grounded, cited by its exact line
+    assert "UPF stuck" not in record     # stub log item replaced
+    assert "upf.log:" not in record
+    assert "sandbox/core/log/upf.log:1833" not in record
     assert len(calls) == 1

@@ -1,0 +1,27 @@
+[
+  {
+    "plane": "n4",
+    "flow_id": null,
+    "procedure": "session_establishment",
+    "shape": "no terminal message (timeout)",
+    "detail": null,
+    "episode": {
+      "incident_type": "n4_upf_timeout",
+      "narrative": "PFCP Session Establishment Requests were repeatedly sent without any Session Establishment Response, leading to a timeout.",
+      "cited_evidence": [
+        {"message": "PFCP Session Establishment Request",
+         "cause": null, "ts": 1787137700.17}
+      ],
+      "created_at": "2026-08-19T12:20:26.957085Z"
+    },
+    "reward": 1.0,
+    "rollouts": 1,
+    "trajectory": [
+      [
+        "finalize {\"incident_type\": \"n4_upf_timeout\", \"narrative\": \"PFCP Session Establishment Requests were repeatedly sent without any Session Establishment Response, leading to a timeout.\", \"cited_evidence\": [{\"message\": \"PFCP Session Establishment Request\", \"cause\": null, \"ts\": 1787137700.17}]}",
+        "finalize accepted: hypothesis grounded in 1 evidence item(s)."
+      ]
+    ],
+    "memory_wrote": true
+  }
+]

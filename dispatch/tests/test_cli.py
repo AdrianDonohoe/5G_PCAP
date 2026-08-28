@@ -1,6 +1,7 @@
 """The CLI seam: handle → (fresh invocation) approve/reject, end to end."""
 
 import json
+import types
 from pathlib import Path
 
 import pytest
@@ -66,7 +67,12 @@ def test_approve_resumes_across_invocations_dry_run(tmp_state, capsys):
 
 def test_approve_execute_applies(tmp_state, monkeypatch):
     calls = []
-    monkeypatch.setattr(executor_mod.subprocess, "run", lambda cmd, **kw: calls.append(cmd))
+    # Patch the executor's subprocess reference (not the shared subprocess
+    # module, which the specialist seams also use) so only executor
+    # commands are recorded.
+    monkeypatch.setattr(executor_mod, "subprocess",
+                        types.SimpleNamespace(
+                            run=lambda cmd, **kw: calls.append(cmd)))
     cli.main(["handle", EVENT, "--stub", STUB])
     assert cli.main(["approve", INCIDENT, "--execute"]) == 0
     assert len(calls) == 1

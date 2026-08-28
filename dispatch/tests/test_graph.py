@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 import dispatch.kpi as kpi_mod
-from _helpers import make_kpi_runner
+from _helpers import make_kpi_runner, make_triage_runner
 from dispatch.graph import build_graph, run_approval, run_to_approval
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -43,10 +43,10 @@ def ctx(tmp_path, sandbox):
     }
 
 
-def _graph(ctx, runner=None, kpi_runner=None):
+def _graph(ctx, runner=None, kpi_runner=None, triage_runner=None):
     return build_graph(ctx["state_path"], ctx["records_dir"],
                        ctx["sandbox_root"], runner=runner,
-                       kpi_runner=kpi_runner)
+                       kpi_runner=kpi_runner, triage_runner=triage_runner)
 
 
 def _handle(ctx, event, stub):
@@ -190,9 +190,42 @@ def test_kpi_node_replaces_stub_items_with_grounded_evidence(ctx, event, stub):
 
 
 def test_kpi_node_without_n2_capture_runs_nothing(ctx, event, stub):
+    event["captures"] = {}  # the fixture now carries n2 — strip it here
     calls = []
     run_to_approval(_graph(ctx, kpi_runner=lambda cmd, **kw: calls.append(cmd)),
                     event, stub)
     assert calls == []
     record = (ctx["records_dir"] / f'{event["incident_id"]}.md').read_text()
     assert "N4 latency missing" not in record
+
+
+# --- the PCAP specialist node: real evidence replaces the stub's pcap items ---
+
+def test_pcap_node_replaces_stub_items_with_grounded_evidence(ctx, event, stub,
+                                                              monkeypatch):
+    export = {"kpis": {}, "flows": [], "unassociated": [],
+              "n4": {"messages": [
+                  {"ts": 1749999950.0, "name": "PFCP Session Establishment "
+                   "Request", "cause_code": None, "flow_id": None}]},
+              "sbi": {"messages": []}}
+    monkeypatch.setattr(kpi_mod.subprocess, "run", make_kpi_runner(export))
+    results = [{"plane": "n4", "flow_id": None, "procedure": "session_"
+                "establishment", "shape": "no terminal message (timeout)",
+                "detail": None, "episode": {
+                    "incident_type": "n4_upf_timeout", "narrative": "timeout",
+                    "cited_evidence": [
+                        {"message": "PFCP Session Establishment Request",
+                         "cause": None, "ts": 1749999950.0},
+                        {"message": "FabricatedRequest", "cause": None,
+                         "ts": 1749999950.0}]}}]
+    calls = []
+    graph = build_graph(ctx["state_path"], ctx["records_dir"],
+                        ctx["sandbox_root"],
+                        triage_runner=make_triage_runner(results, calls))
+    run_to_approval(graph, event, stub)
+    record = (ctx["records_dir"] / f'{event["incident_id"]}.md').read_text()
+    assert "PFCP Session Establishment Request" in record
+    assert "n4:1" in record
+    assert "no response by capture end" not in record  # stub pcap replaced
+    assert "FabricatedRequest" not in record  # hallucinated, never recorded
+    assert len(calls) == 1

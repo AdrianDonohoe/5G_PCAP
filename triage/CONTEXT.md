@@ -78,7 +78,7 @@ _Avoid_: inventory, network map
 The record written once, post-hoc, after a Hypothesis is finalized: the
 Hypothesis plus the Evidence it cited (not the full Trajectory). The unit
 stored in and retrieved from episodic memory.
-_Avoid_: incident record, memory entry
+_Avoid_: dossier, case file, memory entry
 
 **Post-incident report**:
 The deterministic Markdown artifact assembled from a saved triage run plus

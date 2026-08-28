@@ -2,8 +2,9 @@
 
 Each invocation is a fresh process: `handle` runs one Alarm event through
 the Dispatcher and checkpoints at the approval interrupt; `approve` /
-`reject` resume that checkpoint from the sqlite store. `detect-kpi` is
-reserved here so the --help surface stays stable until its slice lands.
+`reject` resume that checkpoint from the sqlite store; `detect-kpi`
+compares capture KPIs against the Golden baseline and emits an Alarm
+event (source: kpi) when degraded, nothing when healthy.
 """
 
 import argparse
@@ -13,6 +14,7 @@ from pathlib import Path
 
 from .evidence import AlarmEvent
 from .graph import build_graph, run_approval, run_to_approval
+from .kpi import detect_kpi
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 STATE_PATH = REPO_ROOT / "dispatch" / "state" / "checkpoints.sqlite"
@@ -47,8 +49,11 @@ def main(argv: list[str] | None = None) -> int:
         "reject", help="resume a checkpointed incident and record the rejection")
     reject.add_argument("incident_id")
 
-    sub.add_parser(
+    detect = sub.add_parser(
         "detect-kpi", help="compare capture KPIs against the Golden baseline")
+    detect.add_argument("capture", help="path to an N2 capture (pcap)")
+    detect.add_argument("--sbi", help="path to the SBI capture (pcap)")
+    detect.add_argument("--n4", help="path to the N4 capture (pcap)")
 
     args = ap.parse_args(argv if argv is not None else sys.argv[1:])
     try:
@@ -65,11 +70,10 @@ def main(argv: list[str] | None = None) -> int:
             for line in result.get("execution_log", []):
                 print(line)
             return 0
+        return _detect_kpi(args)
     except (ValueError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    print(f"dispatch {args.cmd}: not implemented yet", file=sys.stderr)
-    return 1
 
 
 def _handle(args) -> int:
@@ -88,6 +92,19 @@ def _handle(args) -> int:
     run_to_approval(_graph(), alarm.model_dump(), stub)
     print(f"checkpointed — awaiting approval: "
           f"dispatch approve {alarm.incident_id}")
+    return 0
+
+
+def _detect_kpi(args) -> int:
+    captures = {"n2": args.capture}
+    if args.sbi:
+        captures["sbi"] = args.sbi
+    if args.n4:
+        captures["n4"] = args.n4
+    event = detect_kpi(captures)
+    if event is not None:
+        AlarmEvent.model_validate(event)
+        print(json.dumps(event, indent=2))
     return 0
 
 

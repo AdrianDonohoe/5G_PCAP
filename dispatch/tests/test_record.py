@@ -35,6 +35,11 @@ def test_rendering_is_deterministic():
     assert render_record(_sample()) == render_record(_sample())
 
 
+def test_evidence_citations_render():
+    md = render_record(_sample())
+    assert "cited: c" in md
+
+
 def test_approval_status_variants():
     assert "Approval status: **pending**" in render_record(_sample(approval="pending"))
     assert "**approved (dry-run)**" in render_record(_sample(approval="approved-dry-run"))

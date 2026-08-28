@@ -34,7 +34,8 @@ def render_record(rec: dict) -> str:
     for index, item in enumerate(rec["evidence"]):
         keys = ", ".join(f"{k}={v}" for k, v in item["keys"].items())
         lines.append(f"- [{index}] {item['source']} {item['kind']}: "
-                     f"{item['entry']} (keys: {keys})")
+                     f"{item['entry']} (keys: {keys}) — "
+                     f"cited: {item['citation']}")
     if not rec["evidence"]:
         lines.append("- (no evidence)")
     lines.append("")

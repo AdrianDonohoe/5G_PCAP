@@ -1,11 +1,12 @@
 """The Incident Manager graph: the tracer spine of the dispatch layer.
 
 Deterministic pipeline: gather (validated event + stubbed evidence) →
-correlate → investigate (stub root cause) → propose (stub proposal,
+kpi agent (real KPI evidence from 5gcap, replacing the stub's kpi items)
+→ correlate → investigate (stub root cause) → propose (stub proposal,
 template-rendered commands, hash) → approval interrupt → execute on
 resume. Checkpointed to sqlite, so approve/reject resume in a fresh
-process. Groq-free by design — canned stubs stand in for the specialist
-agents until #26–#28 land."""
+process. Groq-free by design — canned stubs stand in for the PCAP and
+Log specialists until #27–#28 land."""
 
 import re
 import sqlite3
@@ -19,6 +20,7 @@ from langgraph.types import Command, interrupt
 from .correlation import link
 from .evidence import AlarmEvent, EvidenceItem
 from .executor import Executor, OBSERVE_ONLY_NOTE, proposal_hash
+from .kpi import run_kpi_agent
 from .record import render_record
 
 _HASH_RE = re.compile(r"Proposal hash: `([0-9a-f]+)`")
@@ -75,9 +77,11 @@ def _read_record_hash(path: str) -> str:
     return match.group(1)
 
 
-def build_graph(state_path, records_dir, sandbox_root, runner=None):
+def build_graph(state_path, records_dir, sandbox_root, runner=None,
+                kpi_runner=None):
     """Compile the Incident Manager graph with a sqlite checkpointer. The
-    checkpointer's connection lives as long as the compiled graph."""
+    checkpointer's connection lives as long as the compiled graph.
+    ``kpi_runner`` stubs the 5gcap subprocess in tests."""
     records_dir = Path(records_dir)
     records_dir.mkdir(parents=True, exist_ok=True)
     Path(state_path).parent.mkdir(parents=True, exist_ok=True)
@@ -89,6 +93,14 @@ def build_graph(state_path, records_dir, sandbox_root, runner=None):
         state["stub"] = _validate_stub(state["stub"])
         state["evidence"] = state["stub"]["evidence"]
         state["record_path"] = str(records_dir / f"{event.incident_id}.md")
+        return state
+
+    def kpi_agent(state: State) -> State:
+        stub_evidence = [e for e in state["evidence"]
+                         if e["source"] != "kpi"]
+        captures = state["event"].get("captures") or {}
+        state["evidence"] = stub_evidence + run_kpi_agent(
+            captures, runner=kpi_runner)
         return state
 
     def correlate(state: State) -> State:
@@ -137,13 +149,15 @@ def build_graph(state_path, records_dir, sandbox_root, runner=None):
 
     graph = StateGraph(State)
     graph.add_node("gather", gather)
+    graph.add_node("kpi_agent", kpi_agent)
     graph.add_node("correlate", correlate)
     graph.add_node("investigate", investigate)
     graph.add_node("propose", propose)
     graph.add_node("approval", approval)
     graph.add_node("execute", execute)
     graph.add_edge(START, "gather")
-    graph.add_edge("gather", "correlate")
+    graph.add_edge("gather", "kpi_agent")
+    graph.add_edge("kpi_agent", "correlate")
     graph.add_edge("correlate", "investigate")
     graph.add_edge("investigate", "propose")
     graph.add_edge("propose", "approval")

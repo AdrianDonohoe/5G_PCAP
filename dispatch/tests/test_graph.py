@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+import dispatch.kpi as kpi_mod
+from _helpers import make_kpi_runner
 from dispatch.graph import build_graph, run_approval, run_to_approval
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -41,9 +43,10 @@ def ctx(tmp_path, sandbox):
     }
 
 
-def _graph(ctx, runner=None):
+def _graph(ctx, runner=None, kpi_runner=None):
     return build_graph(ctx["state_path"], ctx["records_dir"],
-                       ctx["sandbox_root"], runner=runner)
+                       ctx["sandbox_root"], runner=runner,
+                       kpi_runner=kpi_runner)
 
 
 def _handle(ctx, event, stub):
@@ -152,3 +155,44 @@ def test_observe_only_proposal_applies_nothing(ctx, event):
     assert calls == []
     record = (ctx["records_dir"] / f'{event["incident_id"]}.md').read_text()
     assert "observe only" in record
+
+
+# --- the KPI specialist node: real evidence replaces the stub's kpi items ---
+
+# The committed Golden baseline is the comparator's contract — tests read
+# it directly so they track baseline regeneration, never a hand copy.
+KPI_GOLDEN = kpi_mod.load_golden()
+
+
+def test_kpi_node_replaces_stub_items_with_grounded_evidence(ctx, event, stub):
+    event["captures"] = {"n2": "degraded_n2.pcap"}
+    export = {"kpis": dict(KPI_GOLDEN, procedure_success_rate=0.8,
+                           procedure_successes=4, procedure_failures=1),
+              "flows": [{"flow_id": 1, "procedures": [],
+                         "messages": [{"ts": 1750000000.0,
+                                       "nas": "5GMMRegistrationReject",
+                                       "nas_inner": None,
+                                       "nas_cause": {"code": 7,
+                                                     "name": "5GS services "
+                                                             "not allowed"},
+                                       "unparsed": None}]}],
+              "n4": {"messages": []}, "sbi": {"messages": []}}
+    calls = []
+    graph = build_graph(ctx["state_path"], ctx["records_dir"],
+                        ctx["sandbox_root"],
+                        kpi_runner=make_kpi_runner(export, calls))
+    run_to_approval(graph, event, stub)
+    record = (ctx["records_dir"] / f'{event["incident_id"]}.md').read_text()
+    assert "kpi.procedure_success_rate=0.8" in record
+    assert "nas_cause 7" in record
+    assert "N4 latency missing" not in record  # stub kpi item replaced
+    assert len(calls) == 1
+
+
+def test_kpi_node_without_n2_capture_runs_nothing(ctx, event, stub):
+    calls = []
+    run_to_approval(_graph(ctx, kpi_runner=lambda cmd, **kw: calls.append(cmd)),
+                    event, stub)
+    assert calls == []
+    record = (ctx["records_dir"] / f'{event["incident_id"]}.md').read_text()
+    assert "N4 latency missing" not in record

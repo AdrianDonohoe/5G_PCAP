@@ -1,0 +1,33 @@
+[project]
+name = "dispatch"
+version = "0.1.0"
+description = "Event-driven incident orchestration for the 5G_PCAP stack: alarm events, specialist evidence agents, correlation, human-approved remediation"
+requires-python = ">=3.12"
+dependencies = [
+    "dspy>=3.3.0",
+    "langgraph>=0.2.0",
+    "langgraph-checkpoint-sqlite>=2.0.0",
+    "pydantic>=2.13.4",
+    "triage",
+]
+
+[project.scripts]
+dispatch = "dispatch.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["dispatch"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.uv.sources]
+triage = { path = "../triage" }

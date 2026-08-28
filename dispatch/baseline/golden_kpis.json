@@ -1,0 +1,10 @@
+{
+  "attach_time_ms": 123.85829289754231,
+  "pdu_session_time_ms": 3.2886664072672525,
+  "procedure_success_rate": 1.0,
+  "procedure_successes": 6,
+  "procedure_failures": 0,
+  "sbi_to_n4_ms": 15.381654103597006,
+  "n4_to_n2_ms": 4.74858283996582,
+  "sbi_to_n2_ms": 20.130236943562824
+}

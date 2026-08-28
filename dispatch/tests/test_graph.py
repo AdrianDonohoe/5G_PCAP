@@ -10,6 +10,7 @@ import pytest
 import dispatch.kpi as kpi_mod
 from _helpers import make_kpi_runner, make_log_runner, make_triage_runner
 from dispatch.graph import build_graph, run_approval, run_to_approval
+from dispatch.root_cause import Tree, make_execute
 
 FIXTURES = Path(__file__).parent / "fixtures"
 COMPOSE = """services:
@@ -140,7 +141,6 @@ def test_tampered_record_proposal_hash_refuses(ctx, event, stub):
 def test_observe_only_proposal_applies_nothing(ctx, event):
     stub_observe = {
         "evidence": [],
-        "root_cause": "nothing actionable",
         "proposal": {"action": "observe_only", "args": {},
                      "justification": "watch and re-run the capture later"},
     }
@@ -262,3 +262,50 @@ def test_log_node_replaces_stub_items_with_grounded_evidence(ctx, event,
     assert "upf.log:" not in record
     assert "sandbox/core/log/upf.log:1833" not in record
     assert len(calls) == 1
+
+
+# --- the Investigate node: the root-cause search replaces the stub ---
+
+def test_investigate_node_replaces_stub_root_cause(ctx, event, stub):
+    windowed = (FIXTURES / "core_logs_n4_timeout.txt").read_text()
+    line = ("upf     | 2025-06-15T15:05:01.510724553Z [open5gs-upf] INFO "
+            "[upf] PFCP[0] Session Establishment Request "
+            "(../src/upf/pfcp-sm.c:225)")
+    narrative = "The UPF logged the request and never answered it."
+
+    def extract(text, event):
+        return [{"kind": "request unanswered",
+                 "entry": "UPF logs the request but never answers",
+                 "keys": {"nf": "upf"}, "citation": line}]
+
+    # The spec's stub-injected Tree pattern at the graph seam: a real
+    # triage Tree with canned expand/evaluate steps and the Dispatcher's
+    # execute over the grounded log item the node will hold.
+    grounded_item = {"source": "log", "kind": "request unanswered",
+                     "ts": 1749999901.510724,
+                     "entry": "UPF logs the request but never answers",
+                     "cause": None, "endpoints": None,
+                     "keys": {"nf": "upf"}, "citation": line}
+
+    def expand(objective, trajectory, n):
+        assert line in objective        # the objective names the evidence
+        return ["finalize " + json.dumps(
+            {"narrative": narrative,
+             "cited_evidence": [{"citation": line}]})]
+
+    def evaluate(objective, trajectory):
+        return types.SimpleNamespace(reward=1.0, status="complete",
+                                     reflection="grounded")
+
+    tree = Tree(expand=expand, evaluate=evaluate,
+                execute=make_execute([grounded_item], []))
+
+    graph = build_graph(ctx["state_path"], ctx["records_dir"],
+                        ctx["sandbox_root"],
+                        log_runner=make_log_runner(windowed),
+                        extractor=extract,
+                        search=lambda objective: tree.run(objective).episode)
+    run_to_approval(graph, event, stub)
+    record = (ctx["records_dir"] / f'{event["incident_id"]}.md').read_text()
+    assert "## Root cause" in record
+    assert narrative in record          # the winning trajectory's narrative

@@ -40,6 +40,11 @@ def test_evidence_citations_render():
     assert "cited: c" in md
 
 
+def test_root_cause_falls_back_when_empty():
+    md = render_record(_sample(root_cause=""))
+    assert "- (no root cause produced)" in md
+
+
 def test_approval_status_variants():
     assert "Approval status: **pending**" in render_record(_sample(approval="pending"))
     assert "**approved (dry-run)**" in render_record(_sample(approval="approved-dry-run"))

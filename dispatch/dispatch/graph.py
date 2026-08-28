@@ -5,12 +5,14 @@ pcap agent (triage analyze over the decode, evidence grounded in the
 decode inventory, replacing the stub's pcap items) → kpi agent (real KPI
 evidence from 5gcap, replacing the stub's kpi items) → log agent (docker
 stdout logs for the window, LLM-extracted evidence grounded to exact log
-lines, replacing the stub's log items) → correlate → investigate (stub
-root cause) → propose (stub proposal, template-rendered commands, hash) →
-approval interrupt → execute on resume. Checkpointed to sqlite, so
-approve/reject resume in a fresh process. The specialists' subprocesses
-and the log extraction run behind stub seams (ADR-0002); only the root
-cause and proposal remain canned stubs (#29, #30)."""
+lines, replacing the stub's log items) → correlate → investigate (the
+LATS root-cause search over the correlated inventory, triage's Tree
+imported as a library, replacing the stub's narrative) → propose (stub
+proposal, template-rendered commands, hash) → approval interrupt →
+execute on resume. Checkpointed to sqlite, so approve/reject resume in a
+fresh process. The specialists' subprocesses, the log extraction and the
+root-cause search run behind stub seams (ADR-0002); only the proposal
+remains a canned stub (#30)."""
 
 import re
 import sqlite3
@@ -28,6 +30,7 @@ from .kpi import run_kpi_agent
 from .log import run_log_agent
 from .pcap import run_pcap_agent
 from .record import render_record
+from .root_cause import run_root_cause
 
 _HASH_RE = re.compile(r"Proposal hash: `([0-9a-f]+)`")
 
@@ -58,13 +61,12 @@ def _replace_evidence(state: State, source: str, items: list) -> None:
 
 
 def _validate_stub(stub: dict) -> dict:
-    for field in ("evidence", "root_cause", "proposal"):
+    for field in ("evidence", "proposal"):
         if field not in stub:
             raise ValueError(f"stub missing {field!r}")
     return {
         "evidence": [EvidenceItem.model_validate(item).model_dump()
                      for item in stub["evidence"]],
-        "root_cause": stub["root_cause"],
         "proposal": dict(stub["proposal"]),
     }
 
@@ -92,12 +94,15 @@ def _read_record_hash(path: str) -> str:
 
 def build_graph(state_path, records_dir, sandbox_root, runner=None,
                 kpi_runner=None, triage_runner=None, log_runner=None,
-                extractor=None):
+                extractor=None, search=None):
     """Compile the Incident Manager graph with a sqlite checkpointer. The
     checkpointer's connection lives as long as the compiled graph.
     ``kpi_runner`` stubs the 5gcap subprocess in tests; ``triage_runner``
     stubs the triage analyze subprocess; ``log_runner`` stubs the docker
-    compose logs subprocess and ``extractor`` the log extraction (ADR-0002:
+    compose logs subprocess and ``extractor`` the log extraction;
+    ``search`` stubs the root-cause search (tests inject a canned search
+    or a Tree with stub expand/evaluate — the spec's stub-injected Tree
+    pattern). Every live default stays behind its seam (ADR-0002:
     pytest never builds the Groq predictor)."""
     records_dir = Path(records_dir)
     records_dir.mkdir(parents=True, exist_ok=True)
@@ -139,7 +144,8 @@ def build_graph(state_path, records_dir, sandbox_root, runner=None,
         return state
 
     def investigate(state: State) -> State:
-        state["root_cause"] = state["stub"]["root_cause"]
+        state["root_cause"] = run_root_cause(
+            state["event"], state["evidence"], state["links"], search=search)
         return state
 
     def propose(state: State) -> State:

@@ -1,6 +1,7 @@
 """The Incident Record: deterministic Markdown with six sections. The only
-prose in it is the root-cause narrative and the proposal justification
-(canned stubs in this slice — real LLM output lands in #30)."""
+prose in it is the root-cause narrative — the winning trajectory of the
+Dispatcher-layer search — and the proposal justification (a canned stub
+until #30 lands)."""
 
 import json
 
@@ -46,7 +47,8 @@ def render_record(rec: dict) -> str:
         lines.append("- no links")
     lines.append("")
 
-    lines += ["## Root cause", "", rec["root_cause"], ""]
+    lines += ["## Root cause", "",
+              rec["root_cause"] or "- (no root cause produced)", ""]
 
     proposal = rec["proposal"]
     lines += [

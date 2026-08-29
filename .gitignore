@@ -26,6 +26,11 @@ triage/evals/results.json
 dispatch/evals/results.json
 dispatch/evals/work/
 
+# Dispatch pipeline runtime artifacts (Incident Records + the checkpoint
+# store; created by `dispatch handle`, regenerable per incident)
+dispatch/records/
+dispatch/state/
+
 # Claude Code local session settings
 .claude/settings.local.json
 

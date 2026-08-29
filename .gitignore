@@ -21,6 +21,11 @@ triage/memory/
 # Triage eval results (runtime records; regenerated on every explicit run)
 triage/evals/results.json
 
+# Dispatch eval results + per-run work dirs (runtime records; regenerated
+# on every explicit run)
+dispatch/evals/results.json
+dispatch/evals/work/
+
 # Claude Code local session settings
 .claude/settings.local.json
 

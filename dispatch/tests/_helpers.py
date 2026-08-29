@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import dispatch.kpi as kpi_mod
 import dispatch.log as log_mod
 import dispatch.pcap as pcap_mod
+import dispatch.proposal as proposal_mod
 import dispatch.root_cause as root_cause_mod
 
 
@@ -55,13 +56,24 @@ def make_log_runner(windowed_text, calls=None, returncode=0):
     return fake
 
 
+def make_proposer(selection, calls=None):
+    """A proposer fake for the proposal seam: returns the canned
+    selection, recording the (incident, root_cause) it was handed."""
+    def fake(incident, root_cause):
+        if calls is not None:
+            calls.append((incident, root_cause))
+        return selection
+    return fake
+
+
 def stub_specialist_seams(monkeypatch):
     """Blanket failing stubs for the specialist seams: the 5gcap, triage
-    and docker compose subprocess seams, plus the log extraction's and
-    the root-cause search's live defaults. Graph and CLI tests that don't
-    exercise a specialist explicitly must never spawn a real subprocess
-    or build a Groq-backed predictor (ADR-0002); a failing seam degrades
-    the nodes to no evidence, which is their real failure behavior."""
+    and docker compose subprocess seams, plus the log extraction's, the
+    root-cause search's and the proposal selection's live defaults.
+    Graph and CLI tests that don't exercise a specialist explicitly must
+    never spawn a real subprocess or build a Groq-backed predictor
+    (ADR-0002); a failing seam degrades the nodes to no evidence — and
+    the proposal to none — which is their real failure behavior."""
     def failing(cmd, **kw):
         return SimpleNamespace(returncode=1,
                                stderr="specialist subprocess stubbed",
@@ -80,3 +92,8 @@ def stub_specialist_seams(monkeypatch):
         raise RuntimeError("live root-cause search stubbed (ADR-0002)")
 
     monkeypatch.setattr(root_cause_mod, "default_search", no_live_search)
+
+    def no_live_proposer():
+        raise RuntimeError("live proposal selection stubbed (ADR-0002)")
+
+    monkeypatch.setattr(proposal_mod, "default_propose", no_live_proposer)

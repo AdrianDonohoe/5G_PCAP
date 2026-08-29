@@ -9,6 +9,7 @@ import pytest
 import dispatch.cli as cli
 import dispatch.executor as executor_mod
 import dispatch.kpi as kpi_mod
+import dispatch.proposal as proposal_mod
 from _helpers import make_kpi_runner
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -29,6 +30,9 @@ def test_handle_writes_record_and_checkpoint(tmp_state, capsys):
     record = tmp_state / "records" / f"{INCIDENT}.md"
     assert record.exists()
     assert "**pending**" in record.read_text()
+    # No live proposal selection behind the seam: the record says so
+    # honestly instead of inventing one (AC-1).
+    assert "- (no proposal produced)" in record.read_text()
     assert (tmp_state / "checkpoints.sqlite").exists()
 
 
@@ -57,7 +61,35 @@ def test_help_lists_reserved_subcommands(capsys):
         assert name in out
 
 
-def test_approve_resumes_across_invocations_dry_run(tmp_state, capsys):
+# The CLI builds its graph without a proposer seam; the happy approve
+# paths inject the selection one level down, at the proposal default
+# (the conftest blanket has already stubbed it to raise — ADR-0002).
+
+SELECTION = {"action": "restart_nf", "args": {"nf": "upf"},
+             "justification": "Restarting the UPF clears the stuck "
+                              "session state."}
+
+
+def _inject_proposal(monkeypatch):
+    monkeypatch.setattr(proposal_mod, "default_propose",
+                        lambda: (lambda incident, root_cause:
+                                 dict(SELECTION)))
+
+
+def test_approve_without_proposal_errors(tmp_state, capsys):
+    # With the live selection stubbed, the honest record has no
+    # proposal, and approve fails loudly instead of executing anything
+    # (AC-1).
+    cli.main(["handle", EVENT, "--stub", STUB])
+    assert cli.main(["approve", INCIDENT]) == 1
+    assert "no proposal" in capsys.readouterr().err
+    record = (tmp_state / "records" / f"{INCIDENT}.md").read_text()
+    assert "**pending**" in record
+
+
+def test_approve_resumes_across_invocations_dry_run(tmp_state, capsys,
+                                                    monkeypatch):
+    _inject_proposal(monkeypatch)
     cli.main(["handle", EVENT, "--stub", STUB])
     assert cli.main(["approve", INCIDENT]) == 0
     assert "restart upf" in capsys.readouterr().out
@@ -73,6 +105,7 @@ def test_approve_execute_applies(tmp_state, monkeypatch):
     monkeypatch.setattr(executor_mod, "subprocess",
                         types.SimpleNamespace(
                             run=lambda cmd, **kw: calls.append(cmd)))
+    _inject_proposal(monkeypatch)
     cli.main(["handle", EVENT, "--stub", STUB])
     assert cli.main(["approve", INCIDENT, "--execute"]) == 0
     assert len(calls) == 1

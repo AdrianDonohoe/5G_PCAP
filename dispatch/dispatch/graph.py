@@ -7,12 +7,14 @@ evidence from 5gcap, replacing the stub's kpi items) → log agent (docker
 stdout logs for the window, LLM-extracted evidence grounded to exact log
 lines, replacing the stub's log items) → correlate → investigate (the
 LATS root-cause search over the correlated inventory, triage's Tree
-imported as a library, replacing the stub's narrative) → propose (stub
-proposal, template-rendered commands, hash) → approval interrupt →
-execute on resume. Checkpointed to sqlite, so approve/reject resume in a
-fresh process. The specialists' subprocesses, the log extraction and the
-root-cause search run behind stub seams (ADR-0002); only the proposal
-remains a canned stub (#30)."""
+imported as a library, replacing the stub's narrative) → propose (LLM
+selection from the fixed five-action vocabulary with a drafted
+justification, commands rendered by the Executor's deterministic
+templates, hash) → approval interrupt → execute on resume. Checkpointed
+to sqlite, so approve/reject resume in a fresh process. The specialists'
+subprocesses, the log extraction, the root-cause search and the proposal
+selection run behind stub seams (ADR-0002); an invalid selection yields
+no proposal, and the record says so honestly."""
 
 import re
 import sqlite3
@@ -29,6 +31,7 @@ from .executor import Executor, OBSERVE_ONLY_NOTE, proposal_hash
 from .kpi import run_kpi_agent
 from .log import run_log_agent
 from .pcap import run_pcap_agent
+from .proposal import run_proposal
 from .record import render_record
 from .root_cause import run_root_cause
 
@@ -41,7 +44,7 @@ class State(TypedDict, total=False):
     evidence: list
     links: list
     root_cause: str
-    proposal: dict
+    proposal: dict | None
     record_path: str
     decision: str
     execute: bool
@@ -61,13 +64,11 @@ def _replace_evidence(state: State, source: str, items: list) -> None:
 
 
 def _validate_stub(stub: dict) -> dict:
-    for field in ("evidence", "proposal"):
-        if field not in stub:
-            raise ValueError(f"stub missing {field!r}")
+    if "evidence" not in stub:
+        raise ValueError("stub missing 'evidence'")
     return {
         "evidence": [EvidenceItem.model_validate(item).model_dump()
                      for item in stub["evidence"]],
-        "proposal": dict(stub["proposal"]),
     }
 
 
@@ -94,7 +95,7 @@ def _read_record_hash(path: str) -> str:
 
 def build_graph(state_path, records_dir, sandbox_root, runner=None,
                 kpi_runner=None, triage_runner=None, log_runner=None,
-                extractor=None, search=None):
+                extractor=None, search=None, proposer=None):
     """Compile the Incident Manager graph with a sqlite checkpointer. The
     checkpointer's connection lives as long as the compiled graph.
     ``kpi_runner`` stubs the 5gcap subprocess in tests; ``triage_runner``
@@ -102,8 +103,9 @@ def build_graph(state_path, records_dir, sandbox_root, runner=None,
     compose logs subprocess and ``extractor`` the log extraction;
     ``search`` stubs the root-cause search (tests inject a canned search
     or a Tree with stub expand/evaluate — the spec's stub-injected Tree
-    pattern). Every live default stays behind its seam (ADR-0002:
-    pytest never builds the Groq predictor)."""
+    pattern); ``proposer`` stubs the proposal selection. Every live
+    default stays behind its seam (ADR-0002: pytest never builds the
+    Groq predictor)."""
     records_dir = Path(records_dir)
     records_dir.mkdir(parents=True, exist_ok=True)
     Path(state_path).parent.mkdir(parents=True, exist_ok=True)
@@ -149,9 +151,19 @@ def build_graph(state_path, records_dir, sandbox_root, runner=None,
         return state
 
     def propose(state: State) -> State:
-        proposal = state["stub"]["proposal"]
-        proposal["commands"] = executor.dry_run(proposal)
-        proposal["hash"] = proposal_hash(proposal)
+        proposal = run_proposal(state["event"], state["root_cause"],
+                                proposer=proposer)
+        if proposal is not None:
+            try:
+                proposal["commands"] = executor.dry_run(proposal)
+            except ValueError:
+                # The Executor's render rail rejected the args (unknown
+                # nf, path escape, bad IMSI, unknown scenario): an
+                # invalid selection yields no proposal, like the
+                # vocabulary check.
+                proposal = None
+        if proposal is not None:
+            proposal["hash"] = proposal_hash(proposal)
         state["proposal"] = proposal
         _write_record(state, "pending", [])
         return state
@@ -164,7 +176,10 @@ def build_graph(state_path, records_dir, sandbox_root, runner=None,
 
     def execute(state: State) -> State:
         proposal = state["proposal"]
-        if _read_record_hash(state["record_path"]) != proposal["hash"]:
+        if proposal is None and state["decision"] != "reject":
+            raise ValueError("no proposal was produced — nothing to execute")
+        if proposal is not None and \
+                _read_record_hash(state["record_path"]) != proposal["hash"]:
             raise ValueError("proposal hash mismatch — the record was edited")
         if state["decision"] == "reject":
             _write_record(state, "rejected",

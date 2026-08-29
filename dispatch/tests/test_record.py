@@ -45,6 +45,12 @@ def test_root_cause_falls_back_when_empty():
     assert "- (no root cause produced)" in md
 
 
+def test_proposal_falls_back_when_none():
+    md = render_record(_sample(proposal=None))
+    assert "- (no proposal produced)" in md
+    assert "Proposal hash:" not in md
+
+
 def test_approval_status_variants():
     assert "Approval status: **pending**" in render_record(_sample(approval="pending"))
     assert "**approved (dry-run)**" in render_record(_sample(approval="approved-dry-run"))

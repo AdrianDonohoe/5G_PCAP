@@ -8,7 +8,8 @@ from pathlib import Path
 import pytest
 
 import dispatch.kpi as kpi_mod
-from _helpers import make_kpi_runner, make_log_runner, make_triage_runner
+from _helpers import (make_kpi_runner, make_log_runner, make_proposer,
+                      make_triage_runner)
 from dispatch.graph import build_graph, run_approval, run_to_approval
 from dispatch.root_cause import Tree, make_execute
 
@@ -45,10 +46,22 @@ def ctx(tmp_path, sandbox):
     }
 
 
-def _graph(ctx, runner=None, kpi_runner=None, triage_runner=None):
+# The proposal seam's canned selections: the LLM's role is choosing from
+# the fixed five-action vocabulary, so flow tests inject that selection
+# (the spec's stub pattern). The nf must be in the test COMPOSE above.
+CANNED_PROPOSAL = {"action": "restart_nf", "args": {"nf": "upf"},
+                   "justification": "Restarting the UPF clears the "
+                                    "stuck session state."}
+INVALID_SELECTION = {"action": "reboot_the_lab", "args": {},
+                     "justification": "whatever"}
+
+
+def _graph(ctx, runner=None, kpi_runner=None, triage_runner=None,
+           proposer=None):
     return build_graph(ctx["state_path"], ctx["records_dir"],
                        ctx["sandbox_root"], runner=runner,
-                       kpi_runner=kpi_runner, triage_runner=triage_runner)
+                       kpi_runner=kpi_runner, triage_runner=triage_runner,
+                       proposer=proposer or make_proposer(CANNED_PROPOSAL))
 
 
 def _handle(ctx, event, stub):
@@ -139,12 +152,10 @@ def test_tampered_record_proposal_hash_refuses(ctx, event, stub):
 
 
 def test_observe_only_proposal_applies_nothing(ctx, event):
-    stub_observe = {
-        "evidence": [],
-        "proposal": {"action": "observe_only", "args": {},
-                     "justification": "watch and re-run the capture later"},
-    }
-    _handle(ctx, event, stub_observe)
+    observe = make_proposer(
+        {"action": "observe_only", "args": {},
+         "justification": "watch and re-run the capture later"})
+    run_to_approval(_graph(ctx, proposer=observe), event, {"evidence": []})
     calls = []
 
     def fake(cmd, **kw):
@@ -309,3 +320,131 @@ def test_investigate_node_replaces_stub_root_cause(ctx, event, stub):
     record = (ctx["records_dir"] / f'{event["incident_id"]}.md').read_text()
     assert "## Root cause" in record
     assert narrative in record          # the winning trajectory's narrative
+
+
+# --- the Propose node: real selection over the fixed vocabulary (#30) ---
+
+def test_propose_node_replaces_stub_proposal(ctx, event, stub):
+    # The seam injects a selection smuggling fabricated "commands" and
+    # "hash" keys — the recorded commands come from the Executor's
+    # deterministic templates, never LLM text (AC-2).
+    calls = []
+    propose = make_proposer(
+        dict(CANNED_PROPOSAL, commands=["rm -rf /"], hash="fake"), calls)
+    graph = build_graph(ctx["state_path"], ctx["records_dir"],
+                        ctx["sandbox_root"], proposer=propose)
+    run_to_approval(graph, event, stub)
+    record = (ctx["records_dir"] / f'{event["incident_id"]}.md').read_text()
+    assert "Restarting the UPF clears the stuck session state." in record
+    template = (f"docker compose --project-directory "
+                f"{ctx['sandbox_root']}/core restart upf")
+    assert template in record             # template-rendered, never LLM text
+    assert "rm -rf" not in record
+    assert "Proposal hash: `" in record
+    assert len(calls) == 1
+    assert calls[0][0] == event["description"]
+
+
+def test_invalid_selection_yields_no_proposal(ctx, event, stub):
+    # AC-1: a selection outside the fixed vocabulary produces no
+    # proposal, and the record says so honestly.
+    propose = make_proposer(INVALID_SELECTION)
+    run_to_approval(_graph(ctx, proposer=propose), event, stub)
+    record = (ctx["records_dir"] / f'{event["incident_id"]}.md').read_text()
+    assert "- (no proposal produced)" in record
+    assert "**pending**" in record
+    with pytest.raises(ValueError, match="nothing to execute"):
+        run_approval(_graph(ctx, proposer=propose), event["incident_id"],
+                     "approve", execute=False)
+
+
+def test_reject_without_proposal_records_rejection(ctx, event, stub):
+    propose = make_proposer(INVALID_SELECTION)
+    run_to_approval(_graph(ctx, proposer=propose), event, stub)
+    run_approval(_graph(ctx, proposer=propose), event["incident_id"],
+                 "reject")
+    record = (ctx["records_dir"] / f'{event["incident_id"]}.md').read_text()
+    assert "**rejected**" in record
+    assert "no commands applied" in record
+
+
+def test_invalid_args_yield_no_proposal(ctx, event, stub):
+    # The Executor render rail validates args against the sandbox
+    # allowlists (nf outside the core compose here); a selection outside
+    # them yields no proposal, the same as an invalid action.
+    def propose(incident, root_cause):
+        return {"action": "restart_nf", "args": {"nf": "smf"},
+                "justification": "restart the session manager"}
+
+    run_to_approval(_graph(ctx, proposer=propose), event, stub)
+    record = (ctx["records_dir"] / f'{event["incident_id"]}.md').read_text()
+    assert "- (no proposal produced)" in record
+
+
+def test_full_audit_trail_end_to_end(ctx, event, stub):
+    # AC-3: handle → approve --execute on the n4_upf_timeout event with
+    # the log specialist, the root-cause search and the proposal
+    # selection real behind their seams records the full audit trail:
+    # grounded evidence, root cause, proposal, hash and execution log.
+    windowed = (FIXTURES / "core_logs_n4_timeout.txt").read_text()
+    line = ("upf     | 2025-06-15T15:05:01.510724553Z [open5gs-upf] INFO "
+            "[upf] PFCP[0] Session Establishment Request "
+            "(../src/upf/pfcp-sm.c:225)")
+    narrative = "The UPF logged the request and never answered it."
+
+    def extract(text, event):
+        return [{"kind": "request unanswered",
+                 "entry": "UPF logs the request but never answers",
+                 "keys": {"nf": "upf"}, "citation": line}]
+
+    grounded_item = {"source": "log", "kind": "request unanswered",
+                     "ts": 1749999901.510724,
+                     "entry": "UPF logs the request but never answers",
+                     "cause": None, "endpoints": None,
+                     "keys": {"nf": "upf"}, "citation": line}
+
+    def expand(objective, trajectory, n):
+        assert line in objective
+        return ["finalize " + json.dumps(
+            {"narrative": narrative,
+             "cited_evidence": [{"citation": line}]})]
+
+    def evaluate(objective, trajectory):
+        return types.SimpleNamespace(reward=1.0, status="complete",
+                                     reflection="grounded")
+
+    tree = Tree(expand=expand, evaluate=evaluate,
+                execute=make_execute([grounded_item], []))
+
+    def propose(incident, root_cause):
+        assert root_cause == narrative   # the proposal sees the root cause
+        return dict(CANNED_PROPOSAL)
+
+    calls = []
+
+    def fake(cmd, **kw):
+        calls.append(cmd)
+        return 0
+
+    graph = build_graph(ctx["state_path"], ctx["records_dir"],
+                        ctx["sandbox_root"], runner=fake,
+                        log_runner=make_log_runner(windowed),
+                        extractor=extract,
+                        search=lambda objective: tree.run(objective).episode,
+                        proposer=propose)
+    run_to_approval(graph, event, stub)
+    run_approval(_graph(ctx, runner=fake), event["incident_id"],
+                 "approve", execute=True)
+    template = (f"docker compose --project-directory "
+                f"{ctx['sandbox_root']}/core restart upf")
+    assert len(calls) == 1
+    assert calls[0] == template
+    record = (ctx["records_dir"] / f'{event["incident_id"]}.md').read_text()
+    assert line in record                          # grounded log evidence
+    assert "## Root cause" in record
+    assert narrative in record
+    assert "Restarting the UPF clears the stuck session state." in record
+    assert template in record
+    assert "Proposal hash: `" in record
+    assert "**approved (executed)**" in record
+    assert "executed: docker compose" in record    # the full audit trail

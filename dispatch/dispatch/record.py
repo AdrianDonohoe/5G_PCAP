@@ -1,7 +1,9 @@
 """The Incident Record: deterministic Markdown with six sections. The only
 prose in it is the root-cause narrative — the winning trajectory of the
-Dispatcher-layer search — and the proposal justification (a canned stub
-until #30 lands)."""
+Dispatcher-layer search — and the proposal justification, both drafted
+by LLM calls behind stub seams; the proposal's commands are
+template-rendered, and an invalid selection renders the honest fallback
+instead of a proposal."""
 
 import json
 
@@ -51,18 +53,21 @@ def render_record(rec: dict) -> str:
               rec["root_cause"] or "- (no root cause produced)", ""]
 
     proposal = rec["proposal"]
-    lines += [
-        "## Proposal", "",
-        f"- Action: `{proposal['action']}`",
-        f"- Arguments: `{json.dumps(proposal['args'], sort_keys=True)}`",
-        "", proposal["justification"], "",
-        "Commands (template-rendered):", "",
-    ]
-    for command in proposal["commands"]:
-        lines.append(f"- {command}")
-    if not proposal["commands"]:
-        lines.append(f"- {OBSERVE_ONLY_NOTE}")
-    lines += ["", f"Proposal hash: `{proposal['hash']}`", ""]
+    lines += ["## Proposal", ""]
+    if proposal is None:
+        lines += ["- (no proposal produced)", ""]
+    else:
+        lines += [
+            f"- Action: `{proposal['action']}`",
+            f"- Arguments: `{json.dumps(proposal['args'], sort_keys=True)}`",
+            "", proposal["justification"], "",
+            "Commands (template-rendered):", "",
+        ]
+        for command in proposal["commands"]:
+            lines.append(f"- {command}")
+        if not proposal["commands"]:
+            lines.append(f"- {OBSERVE_ONLY_NOTE}")
+        lines += ["", f"Proposal hash: `{proposal['hash']}`", ""]
 
     label = _APPROVAL_LABELS.get(rec["approval"], f"**{rec['approval']}**")
     lines += ["## Approval status", "", f"Approval status: {label}", ""]

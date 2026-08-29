@@ -30,10 +30,5 @@
       "keys": {"flow_id": 1},
       "citation": "kpi.n4_to_n2_ms"
     }
-  ],
-  "proposal": {
-    "action": "restart_nf",
-    "args": {"nf": "upf"},
-    "justification": "Restarting the UPF clears the stuck PDR allocation state and lets the session establishment retry."
-  }
+  ]
 }

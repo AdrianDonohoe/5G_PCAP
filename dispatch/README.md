@@ -10,11 +10,13 @@ and gates execution on Human approval. Nothing executes without it.
 Glossary: [`CONTEXT.md`](./CONTEXT.md) · architecture:
 [`docs/adr/0001-incident-orchestration.md`](./docs/adr/0001-incident-orchestration.md) ·
 remediation safety:
-[`docs/adr/0002-remediation-proposal-and-executor.md`](./docs/adr/0002-remediation-proposal-and-executor.md)
+[`docs/adr/0002-remediation-proposal-and-executor.md`](./docs/adr/0002-remediation-proposal-and-executor.md) ·
+memory and learning:
+[`docs/adr/0003-structured-memory-and-gated-learning.md`](./docs/adr/0003-structured-memory-and-gated-learning.md)
 
 ## The workflow
 
-Four subcommands, one artifact — the Incident Record. A complete real
+Five subcommands, one artifact — the Incident Record. A complete real
 run is committed at
 [`docs/sample-incident-record.md`](./docs/sample-incident-record.md).
 
@@ -116,6 +118,30 @@ The nine `rerun_capture` scenarios (see
 `pdu_session_timeout`, `sbi_udm_timeout`, `sbi_nssf_reject`,
 `n4_upf_timeout`.
 
+### 4. `close` — the Outcome and the learning loop
+
+```
+uv run dispatch close <incident_id> --outcome resolved --evidence "detect-kpi returned the Golden baseline"
+uv run dispatch close <incident_id> --outcome unresolved
+```
+
+`close` is valid only for **approved-executed** incidents — pending,
+dry-run-approved, rejected, and already-closed incidents are refused. It
+appends an **Outcome** section to the Incident Record (verdict, operator
+evidence, and a suggested confirmation check — the same Golden-baseline
+comparison as `detect-kpi`, over fresh post-remediation captures) and
+updates the incident's **Episode** with the verdict.
+
+When the outcome is `resolved` and the remediation was a real action
+(not `observe_only`) that no committed **Runbook** already covers, the
+loop stages a **Runbook draft** — deterministic template, no LLM call —
+at `dispatch/runbooks/proposed/<procedure>-<incident_id>.md` with the
+episode's concrete args copied literally, and prints the diff for review.
+Promotion is manual: you review the draft, generalize the args to
+`{placeholder}` form where warranted, and move it into
+`dispatch/runbooks/`. The loop never edits committed runbooks — learning
+never self-applies (ADR-0003).
+
 ## Sample Incident Record
 
 [`docs/sample-incident-record.md`](./docs/sample-incident-record.md) is a
@@ -216,8 +242,34 @@ proposal.
 
 **Runtime artifacts.** The Incident Record lands in
 `dispatch/records/<incident_id>.md`, the checkpoint store in
-`dispatch/state/checkpoints.sqlite` — both gitignored and regenerable
-per incident.
+`dispatch/state/checkpoints.sqlite`, the Episode store in
+`dispatch/state/episodes.jsonl`, and close-time drafts in
+`dispatch/runbooks/proposed/` — all gitignored and regenerable per
+incident (the committed `dispatch/runbooks/*.md` are source, not
+runtime data).
+
+**Memory stage (ADR-0003).** Two structured stores, both plain file I/O
+— no embeddings, no API calls, so the offline posture holds.
+
+- **Episodes** (`dispatch/state/episodes.jsonl`, append-only) — every
+  decided incident is written at decision time, whatever the decision:
+  the signature (procedure, evidence keys), the action and its concrete
+  args, the root-cause narrative, the decision, and later the Outcome.
+  The investigate node scores past Episodes structurally (3 per shared
+  cause key, 2 for the same procedure, 1 per shared evidence key;
+  threshold 2, top 3, newest first) and seeds the LATS objective with
+  the matches — an empty store or nothing relevant changes nothing.
+- **Runbooks** (`dispatch/runbooks/*.md`, committed) — operator-authored
+  procedural memory with strictly validated YAML frontmatter: one
+  resolution `{action, args}` from the vocabulary per file, symptoms as
+  key:value match keys. The propose node matches them with the same
+  scorer and prepends the top matches as context; `{placeholder}`
+  resolution args bind from the incident's evidence keys.
+- **The learning loop** — `close` writes the Outcome to the record and
+  the Episode, then drafts a Runbook proposal (deterministic, literal
+  args, traceable name) into `runbooks/proposed/` for manual promotion.
+  The operator is the only writer to the committed library; the loop
+  proposes, a human disposes.
 
 - [`docs/adr/0001-incident-orchestration.md`](./docs/adr/0001-incident-orchestration.md)
   — the orchestration decision: the LangGraph spine, the specialist
@@ -226,3 +278,7 @@ per incident.
   — the remediation safety decision: the fixed action vocabulary,
   template-rendered commands, the proposal hash, and Human-gated
   execution.
+- [`docs/adr/0003-structured-memory-and-gated-learning.md`](./docs/adr/0003-structured-memory-and-gated-learning.md)
+  — the memory and learning decision: append-only structured Episodes,
+  committed Runbooks, the close-time Outcome, and a draft loop whose
+  only writer to committed runbooks is the operator.

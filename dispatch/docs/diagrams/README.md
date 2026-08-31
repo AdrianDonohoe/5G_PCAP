@@ -11,8 +11,11 @@
 - `pipeline.mmd` — LangGraph's own view of the compiled graph
   (`graph.get_graph().draw_mermaid()` on `build_graph`), kept beside the
   designed diagram for comparison: the literal node/edge topology, with
-  no containers, flows or gate semantics. Regenerate from the dispatch
-  venv:
+  no containers, flows or gate semantics. It has no memory stage by
+  design — the Episodes and Runbooks stores are plain file I/O and the
+  close-time learning loop runs in the `close` CLI outside the compiled
+  graph, so only the designed diagram shows them (ADR-0003). Regenerate
+  from the dispatch venv:
 
   ```
   cd dispatch && .venv/bin/python3 -c "from dispatch.graph import build_graph; \

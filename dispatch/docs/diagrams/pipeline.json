@@ -4,12 +4,12 @@
   "template_type": "agent",
   "style": 2,
   "width": 1080,
-  "height": 860,
-  "title": "Dispatch — one incident, end to end",
-  "subtitle": "raise or detect · handle · human-gated execution",
+  "height": 1120,
+  "title": "Dispatch \u2014 one incident, end to end",
+  "subtitle": "raise or detect \u00b7 handle \u00b7 human-gated execution \u00b7 close + learn",
   "window_controls": true,
-  "meta_center": "5G DISPATCH · INCIDENT PIPELINE",
-  "meta_right": "STYLE-2 · DARK TERMINAL",
+  "meta_center": "5G DISPATCH \u00b7 INCIDENT PIPELINE",
+  "meta_right": "STYLE-2 \u00b7 DARK TERMINAL",
   "containers": [
     {
       "id": "raise",
@@ -25,7 +25,7 @@
       "y": 270,
       "width": 1020,
       "height": 370,
-      "label": "handle — the Dispatcher"
+      "label": "handle \u2014 the Dispatcher"
     },
     {
       "id": "gate",
@@ -34,6 +34,14 @@
       "width": 1020,
       "height": 170,
       "label": "Approval gate + execution"
+    },
+    {
+      "id": "memory",
+      "x": 30,
+      "y": 880,
+      "width": 1020,
+      "height": 200,
+      "label": "Memory + the learning loop"
     }
   ],
   "nodes": [
@@ -45,7 +53,7 @@
       "width": 180,
       "height": 56,
       "label": "Operator",
-      "sublabel": "raises · human|alarm",
+      "sublabel": "raises \u00b7 human|alarm",
       "fill": "#111827",
       "stroke": "#34d399"
     },
@@ -69,7 +77,7 @@
       "width": 250,
       "height": 56,
       "label": "Alarm event JSON",
-      "sublabel": "incident_id · window · captures",
+      "sublabel": "incident_id \u00b7 window \u00b7 captures",
       "fill": "#0f172a",
       "stroke": "#38bdf8",
       "flat": true
@@ -106,7 +114,7 @@
       "width": 170,
       "height": 56,
       "label": "Log agent",
-      "sublabel": "docker logs · verbatim",
+      "sublabel": "docker logs \u00b7 verbatim",
       "fill": "#111827",
       "stroke": "#a855f7"
     },
@@ -118,7 +126,7 @@
       "width": 240,
       "height": 52,
       "label": "correlate",
-      "sublabel": "strict equality · no guesses",
+      "sublabel": "strict equality \u00b7 no guesses",
       "fill": "#111827",
       "stroke": "#60a5fa"
     },
@@ -129,8 +137,8 @@
       "y": 480,
       "width": 240,
       "height": 56,
-      "label": "investigate — LATS",
-      "sublabel": "triage Tree → root cause",
+      "label": "investigate \u2014 LATS",
+      "sublabel": "triage Tree \u2192 root cause",
       "fill": "#111827",
       "stroke": "#a855f7",
       "glow": "purple"
@@ -143,7 +151,7 @@
       "width": 240,
       "height": 56,
       "label": "propose",
-      "sublabel": "5 actions · templates · hash",
+      "sublabel": "5 actions \u00b7 templates \u00b7 hash",
       "fill": "#111827",
       "stroke": "#a855f7",
       "glow": "purple"
@@ -156,7 +164,7 @@
       "width": 130,
       "height": 56,
       "label": "Operator",
-      "sublabel": "approve · reject",
+      "sublabel": "approve \u00b7 reject",
       "fill": "#111827",
       "stroke": "#34d399"
     },
@@ -193,7 +201,7 @@
       "width": 150,
       "height": 56,
       "label": "executor",
-      "sublabel": "dry-run · --execute",
+      "sublabel": "dry-run \u00b7 --execute",
       "fill": "#111827",
       "stroke": "#ef4444"
     },
@@ -208,6 +216,43 @@
       "sublabel": "Open5GS + UERANSIM",
       "fill": "#111827",
       "stroke": "#2dd4bf"
+    },
+    {
+      "id": "episodes",
+      "kind": "cylinder",
+      "x": 350,
+      "y": 940,
+      "width": 180,
+      "height": 56,
+      "label": "episodes.jsonl",
+      "sublabel": "decided incidents \u00b7 outcome",
+      "fill": "#3f2a00",
+      "stroke": "#f59e0b"
+    },
+    {
+      "id": "runbooks",
+      "kind": "folder",
+      "x": 60,
+      "y": 960,
+      "width": 170,
+      "height": 56,
+      "label": "Runbooks",
+      "sublabel": "committed \u00b7 matched",
+      "fill": "#3f2a00",
+      "stroke": "#f59e0b",
+      "line_stroke": "#fcd34d"
+    },
+    {
+      "id": "draft",
+      "kind": "rect",
+      "x": 760,
+      "y": 940,
+      "width": 250,
+      "height": 56,
+      "label": "Runbook draft",
+      "sublabel": "runbooks/proposed/ \u00b7 literal args",
+      "fill": "#111827",
+      "stroke": "#f97316"
     }
   ],
   "arrows": [
@@ -341,9 +386,73 @@
       "source_port": "right",
       "target_port": "left",
       "flow": "control"
+    },
+    {
+      "id": "a17",
+      "source": "executor",
+      "target": "episodes",
+      "source_port": "bottom",
+      "target_port": "top",
+      "flow": "write",
+      "label": "write episode"
+    },
+    {
+      "id": "a18",
+      "source": "episodes",
+      "target": "investigate",
+      "source_port": "left",
+      "target_port": "left",
+      "flow": "feedback",
+      "label": "retrieve \u2014 seed objective"
+    },
+    {
+      "id": "a19",
+      "source": "runbooks",
+      "target": "propose",
+      "source_port": "right",
+      "target_port": "left",
+      "flow": "feedback",
+      "label": "match \u2014 few-shot context"
+    },
+    {
+      "id": "a20",
+      "source": "operator2",
+      "target": "episodes",
+      "source_port": "left",
+      "target_port": "bottom",
+      "flow": "write",
+      "label": "close \u2014 outcome"
+    },
+    {
+      "id": "a21",
+      "source": "episodes",
+      "target": "draft",
+      "source_port": "right",
+      "target_port": "left",
+      "flow": "data",
+      "label": "deterministic draft \u2014 no LLM"
+    },
+    {
+      "id": "a22",
+      "source": "draft",
+      "target": "operator2",
+      "source_port": "top",
+      "target_port": "top",
+      "flow": "data",
+      "label": "review"
+    },
+    {
+      "id": "a23",
+      "source": "operator2",
+      "target": "runbooks",
+      "source_port": "right",
+      "target_port": "top",
+      "flow": "write",
+      "label": "promote (manual)"
     }
   ],
   "composition": {
-    "profile": "standard"
+    "profile": "standard",
+    "max_bridged_crossings": 9
   }
 }

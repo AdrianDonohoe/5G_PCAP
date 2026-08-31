@@ -23,36 +23,26 @@
 The PNG has the same two traps as
 [`../../docs/diagrams/README.md`](../../docs/diagrams/README.md): no
 system font directory and no Cairo, so resvg-py plus an explicit font
-file is the only renderer that works. One more trap is specific to
-style 1: its CSS font stack is `'Helvetica Neue', Helvetica, Arial, …`
-— not Fira Code — so passing Fira Code TTFs as-is draws **no text at
-all**. Rename the family of the Fira Code 6.2 TTFs (from the
+file is the only renderer that works. Style 2's font stack is
+`'SF Mono', 'Fira Code', Menlo, …`, so the Fira Code 6.2 TTFs (from the
 [release zip](https://github.com/tonsky/FiraCode/releases/tag/6.2),
-`ttf/` directory) to "Helvetica Neue" first, then export and verify:
+`ttf/` directory) match as-is — no renaming:
 
 ```
 uv venv /tmp/diagram-venv
-uv pip install --python /tmp/diagram-venv/bin/python resvg-py fonttools
-python3 - <<'EOF'   # one-time: family-rename the four weights
-from fontTools.ttLib import TTFont
-for weight in ["Regular", "Medium", "SemiBold", "Bold"]:
-    f = TTFont(f"/tmp/firacode/ttf/FiraCode-{weight}.ttf")
-    f["name"].setName("Helvetica Neue", 1, 3, 1, 0x409)
-    f["name"].setName("Helvetica Neue", 16, 3, 1, 0x409)
-    f.save(f"/tmp/helv/HelveticaNeue-{weight}.ttf")
-EOF
+uv pip install --python /tmp/diagram-venv/bin/python resvg-py
 /tmp/diagram-venv/bin/python3 - <<'EOF'
 import resvg_py
 png = resvg_py.svg_to_bytes(svg_path="pipeline.svg", width=1334,
-    font_files=["/tmp/helv/HelveticaNeue-Regular.ttf",
-                "/tmp/helv/HelveticaNeue-Medium.ttf",
-                "/tmp/helv/HelveticaNeue-SemiBold.ttf",
-                "/tmp/helv/HelveticaNeue-Bold.ttf"])
+    font_files=["/tmp/firacode/ttf/FiraCode-Regular.ttf",
+                "/tmp/firacode/ttf/FiraCode-Medium.ttf",
+                "/tmp/firacode/ttf/FiraCode-SemiBold.ttf",
+                "/tmp/firacode/ttf/FiraCode-Bold.ttf"])
 open("pipeline.png", "wb").write(png)
 EOF
 ```
 
 The failure mode is a silently textless PNG, so verify before
 committing: crop the title band (y≈20–58) of the PNG and assert it
-contains non-zero near-black pixels. The `check` gate on the SVG does
-not cover this.
+contains non-zero near-white pixels on the dark canvas. The `check`
+gate on the SVG does not cover this.

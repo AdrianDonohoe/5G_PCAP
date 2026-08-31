@@ -2,14 +2,14 @@
   "schema_version": 1,
   "mode": "agent",
   "template_type": "agent",
-  "style": 1,
+  "style": 2,
   "width": 1080,
   "height": 860,
   "title": "Dispatch — one incident, end to end",
   "subtitle": "raise or detect · handle · human-gated execution",
   "window_controls": true,
   "meta_center": "5G DISPATCH · INCIDENT PIPELINE",
-  "meta_right": "STYLE-1 · FLAT ICON",
+  "meta_right": "STYLE-2 · DARK TERMINAL",
   "containers": [
     {
       "id": "raise",
@@ -46,8 +46,8 @@
       "height": 56,
       "label": "Operator",
       "sublabel": "raises · human|alarm",
-      "fill": "#f0fdf4",
-      "stroke": "#16a34a"
+      "fill": "#111827",
+      "stroke": "#34d399"
     },
     {
       "id": "detect_kpi",
@@ -58,8 +58,8 @@
       "height": 56,
       "label": "detect-kpi",
       "sublabel": "5gcap + Golden baseline",
-      "fill": "#eff6ff",
-      "stroke": "#2563eb"
+      "fill": "#111827",
+      "stroke": "#60a5fa"
     },
     {
       "id": "event",
@@ -70,8 +70,8 @@
       "height": 56,
       "label": "Alarm event JSON",
       "sublabel": "incident_id · window · captures",
-      "fill": "#fff7ed",
-      "stroke": "#ea580c",
+      "fill": "#0f172a",
+      "stroke": "#38bdf8",
       "flat": true
     },
     {
@@ -83,8 +83,8 @@
       "height": 56,
       "label": "PCAP agent",
       "sublabel": "decode + triage analyze",
-      "fill": "#faf5ff",
-      "stroke": "#7c3aed"
+      "fill": "#111827",
+      "stroke": "#a855f7"
     },
     {
       "id": "kpi",
@@ -95,8 +95,8 @@
       "height": 56,
       "label": "KPI agent",
       "sublabel": "deviations vs Golden",
-      "fill": "#eff6ff",
-      "stroke": "#2563eb"
+      "fill": "#111827",
+      "stroke": "#60a5fa"
     },
     {
       "id": "log",
@@ -107,8 +107,8 @@
       "height": 56,
       "label": "Log agent",
       "sublabel": "docker logs · verbatim",
-      "fill": "#faf5ff",
-      "stroke": "#7c3aed"
+      "fill": "#111827",
+      "stroke": "#a855f7"
     },
     {
       "id": "correlate",
@@ -119,8 +119,8 @@
       "height": 52,
       "label": "correlate",
       "sublabel": "strict equality · no guesses",
-      "fill": "#eff6ff",
-      "stroke": "#2563eb"
+      "fill": "#111827",
+      "stroke": "#60a5fa"
     },
     {
       "id": "investigate",
@@ -131,8 +131,9 @@
       "height": 56,
       "label": "investigate — LATS",
       "sublabel": "triage Tree → root cause",
-      "fill": "#faf5ff",
-      "stroke": "#7c3aed"
+      "fill": "#111827",
+      "stroke": "#a855f7",
+      "glow": "purple"
     },
     {
       "id": "propose",
@@ -143,8 +144,9 @@
       "height": 56,
       "label": "propose",
       "sublabel": "5 actions · templates · hash",
-      "fill": "#faf5ff",
-      "stroke": "#7c3aed"
+      "fill": "#111827",
+      "stroke": "#a855f7",
+      "glow": "purple"
     },
     {
       "id": "operator2",
@@ -155,8 +157,8 @@
       "height": 56,
       "label": "Operator",
       "sublabel": "approve · reject",
-      "fill": "#f0fdf4",
-      "stroke": "#16a34a"
+      "fill": "#111827",
+      "stroke": "#34d399"
     },
     {
       "id": "record",
@@ -167,9 +169,9 @@
       "height": 56,
       "label": "Incident Record",
       "sublabel": "pending at the gate",
-      "fill": "#fff7ed",
-      "stroke": "#ea580c",
-      "line_stroke": "#fdba74"
+      "fill": "#3f2a00",
+      "stroke": "#f59e0b",
+      "line_stroke": "#fcd34d"
     },
     {
       "id": "checkpoint",
@@ -180,8 +182,8 @@
       "height": 56,
       "label": "checkpoints.sqlite",
       "sublabel": "resume across runs",
-      "fill": "#fff7ed",
-      "stroke": "#ea580c"
+      "fill": "#3f2a00",
+      "stroke": "#f59e0b"
     },
     {
       "id": "executor",
@@ -192,8 +194,8 @@
       "height": 56,
       "label": "executor",
       "sublabel": "dry-run · --execute",
-      "fill": "#fef2f2",
-      "stroke": "#dc2626"
+      "fill": "#111827",
+      "stroke": "#ef4444"
     },
     {
       "id": "sandbox",
@@ -204,8 +206,8 @@
       "height": 56,
       "label": "sandbox lab",
       "sublabel": "Open5GS + UERANSIM",
-      "fill": "#f0fdfa",
-      "stroke": "#0d9488"
+      "fill": "#111827",
+      "stroke": "#2dd4bf"
     }
   ],
   "arrows": [

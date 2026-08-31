@@ -4,7 +4,9 @@ and the objective context seeded into the root-cause investigation.
 CONTEXT.md: an Episode is a decided incident — its signature (procedure,
 scenario, evidence keys), the decision, and, once the operator closes it,
 its Outcome. The execute node writes it at decision time, whatever the
-decision (spec #33); the Outcome is appended later, at close.
+decision (spec #33); the Outcome is set later, at close, with a surgical
+single-line rewrite — the one exception to append-only, so the corrupt
+lines still stay skipped rather than deleted.
 
 The backend mirrors triage's proven MemoryStore pattern — an append-only
 local JSON file store whose corrupt lines are skipped on load — and the
@@ -33,19 +35,22 @@ class Episode(BaseModel):
     """A decided incident (CONTEXT.md): the match keys — incident id,
     procedure, scenario, the evidence keys and causes, the action — plus
     the narrative root cause, the justification, the decision, and the
-    Outcome once the operator closes the incident. The narrative may be
-    the honest fallback "" (an incident decided without a root cause is
-    still remembered)."""
+    Outcome once the operator closes the incident. ``args`` carries the
+    proposal's concrete args: the close-time Runbook draft (ticket #36)
+    copies them literally. The narrative may be the honest fallback ""
+    (an incident decided without a root cause is still remembered)."""
     incident_id: str
     procedure: str | None = None
     scenario: str | None = None
     evidence_keys: list[EvidenceKey] = Field(default_factory=list)
     causes: list[str] = Field(default_factory=list)
     action: str | None = None
+    args: dict[str, str] | None = None
     narrative: str
     justification: str | None = None
     decision: DECISIONS
     outcome: Literal["resolved", "unresolved"] | None = None
+    outcome_evidence: str | None = None
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc))
 
@@ -78,6 +83,32 @@ class EpisodeStore:
             except Exception:
                 continue  # corrupt record: skip rather than fail the path
         return episodes
+
+    def set_outcome(self, incident_id: str, outcome,
+                    evidence=None) -> Episode:
+        """Set one Episode's Outcome in place. The one exception to
+        append-only, and surgical: the matching line is rewritten, every
+        other line — corrupt ones included — is written back exactly as
+        read. An incident the store does not hold raises ValueError."""
+        lines = self.path.read_text(encoding="utf-8").split("\n")
+        updated = None
+        for index, line in enumerate(lines):
+            if not line:
+                continue
+            try:
+                episode = Episode.model_validate_json(line)
+            except Exception:
+                continue  # corrupt record: preserved, never rewritten
+            if episode.incident_id == incident_id:
+                episode.outcome = outcome
+                episode.outcome_evidence = evidence
+                lines[index] = episode.model_dump_json()
+                updated = episode
+        if updated is None:
+            raise ValueError(f"no episode {incident_id!r} in the store "
+                             "to close")
+        self.path.write_text("\n".join(lines), encoding="utf-8")
+        return updated
 
 
 def _evidence_keys(episode: Episode) -> set[tuple[str, str]]:

@@ -150,3 +150,51 @@ def test_memory_context_without_procedure_scores_keys_only(tmp_path, event,
              narrative="cause-only")
     text = memory_context(store, {"procedure": None}, evidence)
     assert "cause-only" in text
+
+
+# --- Outcome: closing an incident rewrites its Episode in place ---
+
+def test_set_outcome_updates_the_episode_across_instances(tmp_path):
+    path = tmp_path / "episodes.jsonl"
+    store = EpisodeStore(path)
+    _episode(store, "inc-1", procedure="n4_upf_timeout",
+             decision="approved-executed")
+    EpisodeStore(path).set_outcome("inc-1", "resolved",
+                                   evidence="detect-kpi matched Golden")
+    reloaded = EpisodeStore(path).load()
+    assert [ep.incident_id for ep in reloaded] == ["inc-1"]
+    assert reloaded[0].outcome == "resolved"
+    assert reloaded[0].outcome_evidence == "detect-kpi matched Golden"
+
+
+def test_set_outcome_preserves_corrupt_lines(tmp_path):
+    path = tmp_path / "episodes.jsonl"
+    store = EpisodeStore(path)
+    _episode(store, "inc-1", procedure="n4_upf_timeout")
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write("{not json at all\n")
+    store.set_outcome("inc-1", "unresolved")
+    # The append-only discipline survives: only the one line is rewritten,
+    # the corrupt neighbor stays byte-identical.
+    assert "{not json at all" in path.read_text()
+    reloaded = EpisodeStore(path).load()
+    assert [ep.incident_id for ep in reloaded] == ["inc-1"]
+    assert reloaded[0].outcome == "unresolved"
+
+
+def test_set_outcome_unknown_incident_raises(tmp_path):
+    store = EpisodeStore(tmp_path / "episodes.jsonl")
+    _episode(store, "inc-1", procedure="n4_upf_timeout")
+    with pytest.raises(ValueError, match="no episode"):
+        store.set_outcome("inc-missing", "resolved")
+
+
+def test_episode_roundtrips_the_concrete_proposal_args(tmp_path):
+    # The close-time Runbook draft copies these concrete args literally
+    # (ticket #36), so the Episode carries them from decision time.
+    path = tmp_path / "episodes.jsonl"
+    EpisodeStore(path).add(Episode(incident_id="inc-1", narrative="",
+                                   decision="rejected",
+                                   action="restart_nf", args={"nf": "upf"}))
+    ep = EpisodeStore(path).load()[0]
+    assert ep.args == {"nf": "upf"}

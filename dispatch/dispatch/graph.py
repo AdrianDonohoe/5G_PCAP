@@ -105,6 +105,7 @@ def _write_episode(state: State, decision: str, episodes) -> None:
         causes=[item["cause"] for item in state["evidence"]
                 if item.get("cause")],
         action=proposal.get("action"),
+        args=proposal.get("args"),
         narrative=state["root_cause"],
         justification=proposal.get("justification"),
         decision=decision,

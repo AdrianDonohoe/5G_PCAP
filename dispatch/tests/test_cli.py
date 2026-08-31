@@ -24,8 +24,9 @@ def tmp_state(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "RECORDS_DIR", tmp_path / "records")
     # The runbooks dir is patched too, so the CLI tests never load the
     # committed seed runbook — the wiring test below drops one in
-    # explicitly.
+    # explicitly. The close-time drafts stage in a patched proposed dir.
     monkeypatch.setattr(cli, "RUNBOOKS_DIR", tmp_path / "runbooks")
+    monkeypatch.setattr(cli, "PROPOSED_RUNBOOKS_DIR", tmp_path / "proposed")
     return tmp_path
 
 
@@ -61,7 +62,7 @@ def test_help_lists_reserved_subcommands(capsys):
     with pytest.raises(SystemExit):
         cli.main(["--help"])
     out = capsys.readouterr().out
-    for name in ("handle", "detect-kpi", "approve", "reject"):
+    for name in ("handle", "detect-kpi", "approve", "reject", "close"):
         assert name in out
 
 
@@ -74,10 +75,10 @@ SELECTION = {"action": "restart_nf", "args": {"nf": "upf"},
                               "session state."}
 
 
-def _inject_proposal(monkeypatch):
+def _inject_proposal(monkeypatch, selection=None):
     monkeypatch.setattr(proposal_mod, "default_propose",
                         lambda: (lambda incident, root_cause:
-                                 dict(SELECTION)))
+                                 dict(selection or SELECTION)))
 
 
 def test_approve_without_proposal_errors(tmp_state, capsys):
@@ -193,6 +194,126 @@ def test_handle_without_runbooks_leaves_the_description_untouched(
     monkeypatch.setattr(proposal_mod, "default_propose", lambda: propose)
     cli.main(["handle", EVENT, "--stub", STUB])
     assert seen == [json.loads(Path(EVENT).read_text())["description"]]
+
+
+# --- Close: the Outcome and the deterministic Runbook draft (spec #33) ---
+
+OBSERVE = {"action": "observe_only", "args": {},
+           "justification": "Watch the lab before touching anything."}
+
+
+def _close_ready(monkeypatch, selection=None):
+    # The executor's subprocess reference is patched (not the shared
+    # subprocess module) so only executor commands are recorded — the
+    # same seam test_approve_execute_applies uses.
+    calls = []
+    monkeypatch.setattr(executor_mod, "subprocess",
+                        types.SimpleNamespace(
+                            run=lambda cmd, **kw: calls.append(cmd)))
+    _inject_proposal(monkeypatch, selection)
+    cli.main(["handle", EVENT, "--stub", STUB])
+    assert cli.main(["approve", INCIDENT, "--execute"]) == 0
+    return calls
+
+
+def test_close_resolved_appends_outcome_and_drafts(tmp_state, capsys,
+                                                   monkeypatch):
+    from dispatch.runbook import parse_runbook
+
+    _close_ready(monkeypatch)
+    assert cli.main(["close", INCIDENT, "--outcome", "resolved",
+                     "--evidence", "detect-kpi returned the Golden "
+                     "baseline"]) == 0
+    out = capsys.readouterr().out
+    record = (tmp_state / "records" / f"{INCIDENT}.md").read_text()
+    assert "## Outcome" in record
+    assert "**resolved**" in record
+    assert "detect-kpi returned the Golden baseline" in record
+    # The suggested confirmation check uses the event's capture names.
+    assert "Suggested confirmation check" in out
+    assert "dispatch detect-kpi n4_upf_timeout.pcap" in out
+    # The deterministic draft (no LLM call) is staged with a traceable
+    # name and its concrete args copied literally.
+    draft = tmp_state / "proposed" / "n4_upf_timeout-inc-n4-upf-timeout-1.md"
+    assert draft.exists()
+    assert "+slug: n4_upf_timeout-inc-n4-upf-timeout-1" in out
+    rb = parse_runbook(draft)
+    assert rb.procedure == "n4_upf_timeout"
+    assert rb.resolution.args == {"nf": "upf"}
+    from dispatch.memory import EpisodeStore
+
+    stored = EpisodeStore(tmp_state / "episodes.jsonl").load()
+    assert stored[0].outcome == "resolved"
+    assert stored[0].outcome_evidence == \
+        "detect-kpi returned the Golden baseline"
+    assert "closed incident" in out
+
+
+def test_close_unresolved_writes_outcome_without_draft(tmp_state, capsys,
+                                                       monkeypatch):
+    _close_ready(monkeypatch)
+    assert cli.main(["close", INCIDENT, "--outcome", "unresolved"]) == 0
+    record = (tmp_state / "records" / f"{INCIDENT}.md").read_text()
+    assert "**unresolved**" in record
+    assert not (tmp_state / "proposed").exists()
+    assert "closed incident" in capsys.readouterr().out
+
+
+def test_close_refused_while_awaiting_approval(tmp_state, capsys,
+                                              monkeypatch):
+    _inject_proposal(monkeypatch)
+    cli.main(["handle", EVENT, "--stub", STUB])
+    assert cli.main(["close", INCIDENT, "--outcome", "resolved"]) == 1
+    assert "awaiting approval" in capsys.readouterr().err
+
+
+def test_close_refused_for_dry_run_approval(tmp_state, capsys, monkeypatch):
+    _inject_proposal(monkeypatch)
+    cli.main(["handle", EVENT, "--stub", STUB])
+    assert cli.main(["approve", INCIDENT]) == 0
+    assert cli.main(["close", INCIDENT, "--outcome", "resolved"]) == 1
+    assert "not approved for execution" in capsys.readouterr().err
+
+
+def test_close_refused_for_rejected(tmp_state, capsys):
+    cli.main(["handle", EVENT, "--stub", STUB])
+    assert cli.main(["reject", INCIDENT]) == 0
+    assert cli.main(["close", INCIDENT, "--outcome", "resolved"]) == 1
+    assert "not approved for execution" in capsys.readouterr().err
+
+
+def test_close_unknown_incident_errors(tmp_state, capsys):
+    assert cli.main(["close", "never-existed", "--outcome", "resolved"]) == 1
+    assert "no checkpoint" in capsys.readouterr().err
+
+
+def test_close_refused_when_already_closed(tmp_state, capsys, monkeypatch):
+    _close_ready(monkeypatch)
+    assert cli.main(["close", INCIDENT, "--outcome", "resolved"]) == 0
+    assert cli.main(["close", INCIDENT, "--outcome", "resolved"]) == 1
+    assert "already closed" in capsys.readouterr().err
+
+
+def test_close_observe_only_writes_outcome_without_draft(tmp_state, capsys,
+                                                         monkeypatch):
+    _close_ready(monkeypatch, OBSERVE)
+    assert cli.main(["close", INCIDENT, "--outcome", "resolved"]) == 0
+    record = (tmp_state / "records" / f"{INCIDENT}.md").read_text()
+    assert "**resolved**" in record
+    assert not (tmp_state / "proposed").exists()
+
+
+def test_close_with_matching_runbook_skips_the_draft(tmp_state, capsys,
+                                                     monkeypatch):
+    (tmp_state / "runbooks").mkdir()
+    (tmp_state / "runbooks" / "n4-timeout.md").write_text(RUNBOOK_MD)
+    _close_ready(monkeypatch)
+    assert cli.main(["close", INCIDENT, "--outcome", "resolved"]) == 0
+    assert not (tmp_state / "proposed").exists()
+    assert "## Outcome" in \
+        (tmp_state / "records" / f"{INCIDENT}.md").read_text()
+    # The loop never edits the committed runbooks (spec #33).
+    assert (tmp_state / "runbooks" / "n4-timeout.md").read_text() == RUNBOOK_MD
 
 
 # --- detect-kpi: the comparator subcommand at the process boundary ---

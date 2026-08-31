@@ -586,6 +586,25 @@ def test_investigate_objective_untouched_without_episodes(ctx, event, stub):
     assert "Past similar incidents" not in objectives[0]
 
 
+def test_episode_records_the_proposal_args(ctx, event, stub):
+    # The close-time Runbook draft (ticket #36) copies the Episode's
+    # concrete args literally, so the write at decision time carries them.
+    windowed = (FIXTURES / "core_logs_n4_timeout.txt").read_text()
+    episodes = EpisodeStore(_episodes_path(ctx))
+    graph = build_graph(ctx["state_path"], ctx["records_dir"],
+                        ctx["sandbox_root"],
+                        log_runner=make_log_runner(windowed),
+                        extractor=_log_extractor, episodes=episodes,
+                        proposer=make_proposer(CANNED_PROPOSAL))
+    run_to_approval(graph, event, stub)
+    run_approval(build_graph(ctx["state_path"], ctx["records_dir"],
+                             ctx["sandbox_root"], episodes=episodes,
+                             proposer=make_proposer(CANNED_PROPOSAL)),
+                 event["incident_id"], "approve", execute=False)
+    ep = EpisodeStore(_episodes_path(ctx)).load()[0]
+    assert ep.args == {"nf": "upf"}
+
+
 # --- Procedural memory: the propose node matches runbooks ---
 
 # The log seam injects real evidence (keys nf=upf), so the runbook's

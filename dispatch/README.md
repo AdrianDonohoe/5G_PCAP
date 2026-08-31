@@ -172,7 +172,7 @@ each pending record with a judge model distinct from the generator.
 
 ## Architecture
 
-![Dispatch pipeline — raise or detect, handle, human-gated execution](./docs/diagrams/pipeline.png)
+![Dispatch pipeline — raise or detect, handle, human-gated execution, close + learn](./docs/diagrams/pipeline.png)
 
 The diagram's source of truth is
 [`docs/diagrams/pipeline.json`](./docs/diagrams/pipeline.json)
@@ -253,7 +253,7 @@ runtime data).
 
 - **Episodes** (`dispatch/state/episodes.jsonl`, append-only) — every
   decided incident is written at decision time, whatever the decision:
-  the signature (procedure, evidence keys), the action and its concrete
+  the signature (procedure, scenario, evidence keys), the action and its concrete
   args, the root-cause narrative, the decision, and later the Outcome.
   The investigate node scores past Episodes structurally (3 per shared
   cause key, 2 for the same procedure, 1 per shared evidence key;

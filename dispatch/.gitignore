@@ -1,3 +1,5 @@
 # Incident state — checkpoints (correlation graphs included) and records — runtime artifacts
 state/
 records/
+# Close-time Runbook drafts awaiting manual promotion — runtime artifacts
+runbooks/proposed/

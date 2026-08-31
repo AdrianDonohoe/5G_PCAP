@@ -1,0 +1,347 @@
+{
+  "schema_version": 1,
+  "mode": "agent",
+  "template_type": "agent",
+  "style": 1,
+  "width": 1080,
+  "height": 860,
+  "title": "Dispatch — one incident, end to end",
+  "subtitle": "raise or detect · handle · human-gated execution",
+  "window_controls": true,
+  "meta_center": "5G DISPATCH · INCIDENT PIPELINE",
+  "meta_right": "STYLE-1 · FLAT ICON",
+  "containers": [
+    {
+      "id": "raise",
+      "x": 30,
+      "y": 80,
+      "width": 1020,
+      "height": 180,
+      "label": "Raise or detect the Alarm event"
+    },
+    {
+      "id": "handle",
+      "x": 30,
+      "y": 270,
+      "width": 1020,
+      "height": 370,
+      "label": "handle — the Dispatcher"
+    },
+    {
+      "id": "gate",
+      "x": 30,
+      "y": 670,
+      "width": 1020,
+      "height": 170,
+      "label": "Approval gate + execution"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "operator",
+      "kind": "rect",
+      "x": 60,
+      "y": 130,
+      "width": 180,
+      "height": 56,
+      "label": "Operator",
+      "sublabel": "raises · human|alarm",
+      "fill": "#f0fdf4",
+      "stroke": "#16a34a"
+    },
+    {
+      "id": "detect_kpi",
+      "kind": "rect",
+      "x": 760,
+      "y": 130,
+      "width": 220,
+      "height": 56,
+      "label": "detect-kpi",
+      "sublabel": "5gcap + Golden baseline",
+      "fill": "#eff6ff",
+      "stroke": "#2563eb"
+    },
+    {
+      "id": "event",
+      "kind": "speech",
+      "x": 440,
+      "y": 200,
+      "width": 250,
+      "height": 56,
+      "label": "Alarm event JSON",
+      "sublabel": "incident_id · window · captures",
+      "fill": "#fff7ed",
+      "stroke": "#ea580c",
+      "flat": true
+    },
+    {
+      "id": "pcap",
+      "kind": "rect",
+      "x": 150,
+      "y": 310,
+      "width": 170,
+      "height": 56,
+      "label": "PCAP agent",
+      "sublabel": "decode + triage analyze",
+      "fill": "#faf5ff",
+      "stroke": "#7c3aed"
+    },
+    {
+      "id": "kpi",
+      "kind": "rect",
+      "x": 350,
+      "y": 310,
+      "width": 170,
+      "height": 56,
+      "label": "KPI agent",
+      "sublabel": "deviations vs Golden",
+      "fill": "#eff6ff",
+      "stroke": "#2563eb"
+    },
+    {
+      "id": "log",
+      "kind": "rect",
+      "x": 550,
+      "y": 310,
+      "width": 170,
+      "height": 56,
+      "label": "Log agent",
+      "sublabel": "docker logs · verbatim",
+      "fill": "#faf5ff",
+      "stroke": "#7c3aed"
+    },
+    {
+      "id": "correlate",
+      "kind": "rect",
+      "x": 315,
+      "y": 400,
+      "width": 240,
+      "height": 52,
+      "label": "correlate",
+      "sublabel": "strict equality · no guesses",
+      "fill": "#eff6ff",
+      "stroke": "#2563eb"
+    },
+    {
+      "id": "investigate",
+      "kind": "hexagon",
+      "x": 315,
+      "y": 480,
+      "width": 240,
+      "height": 56,
+      "label": "investigate — LATS",
+      "sublabel": "triage Tree → root cause",
+      "fill": "#faf5ff",
+      "stroke": "#7c3aed"
+    },
+    {
+      "id": "propose",
+      "kind": "double_rect",
+      "x": 315,
+      "y": 560,
+      "width": 240,
+      "height": 56,
+      "label": "propose",
+      "sublabel": "5 actions · templates · hash",
+      "fill": "#faf5ff",
+      "stroke": "#7c3aed"
+    },
+    {
+      "id": "operator2",
+      "kind": "rect",
+      "x": 40,
+      "y": 710,
+      "width": 130,
+      "height": 56,
+      "label": "Operator",
+      "sublabel": "approve · reject",
+      "fill": "#f0fdf4",
+      "stroke": "#16a34a"
+    },
+    {
+      "id": "record",
+      "kind": "folder",
+      "x": 330,
+      "y": 710,
+      "width": 150,
+      "height": 56,
+      "label": "Incident Record",
+      "sublabel": "pending at the gate",
+      "fill": "#fff7ed",
+      "stroke": "#ea580c",
+      "line_stroke": "#fdba74"
+    },
+    {
+      "id": "checkpoint",
+      "kind": "cylinder",
+      "x": 520,
+      "y": 710,
+      "width": 160,
+      "height": 56,
+      "label": "checkpoints.sqlite",
+      "sublabel": "resume across runs",
+      "fill": "#fff7ed",
+      "stroke": "#ea580c"
+    },
+    {
+      "id": "executor",
+      "kind": "rect",
+      "x": 700,
+      "y": 710,
+      "width": 150,
+      "height": 56,
+      "label": "executor",
+      "sublabel": "dry-run · --execute",
+      "fill": "#fef2f2",
+      "stroke": "#dc2626"
+    },
+    {
+      "id": "sandbox",
+      "kind": "rect",
+      "x": 880,
+      "y": 710,
+      "width": 140,
+      "height": 56,
+      "label": "sandbox lab",
+      "sublabel": "Open5GS + UERANSIM",
+      "fill": "#f0fdfa",
+      "stroke": "#0d9488"
+    }
+  ],
+  "arrows": [
+    {
+      "id": "a1",
+      "source": "operator",
+      "target": "event",
+      "source_port": "bottom",
+      "target_port": "top",
+      "flow": "control",
+      "label": "raise"
+    },
+    {
+      "id": "a2",
+      "source": "detect_kpi",
+      "target": "event",
+      "source_port": "bottom",
+      "target_port": "top",
+      "flow": "control",
+      "label": "detect"
+    },
+    {
+      "id": "a3",
+      "source": "event",
+      "target": "pcap",
+      "source_port": "bottom",
+      "target_port": "top",
+      "flow": "control"
+    },
+    {
+      "id": "a4",
+      "source": "event",
+      "target": "kpi",
+      "source_port": "bottom",
+      "target_port": "top",
+      "flow": "control"
+    },
+    {
+      "id": "a5",
+      "source": "event",
+      "target": "log",
+      "source_port": "bottom",
+      "target_port": "top",
+      "flow": "control"
+    },
+    {
+      "id": "a6",
+      "source": "pcap",
+      "target": "correlate",
+      "source_port": "bottom",
+      "target_port": "top",
+      "flow": "data"
+    },
+    {
+      "id": "a7",
+      "source": "kpi",
+      "target": "correlate",
+      "source_port": "bottom",
+      "target_port": "top",
+      "flow": "data"
+    },
+    {
+      "id": "a8",
+      "source": "log",
+      "target": "correlate",
+      "source_port": "bottom",
+      "target_port": "top",
+      "flow": "data"
+    },
+    {
+      "id": "a9",
+      "source": "correlate",
+      "target": "investigate",
+      "source_port": "bottom",
+      "target_port": "top",
+      "flow": "data"
+    },
+    {
+      "id": "a10",
+      "source": "investigate",
+      "target": "propose",
+      "source_port": "bottom",
+      "target_port": "top",
+      "flow": "control"
+    },
+    {
+      "id": "a11",
+      "source": "propose",
+      "target": "record",
+      "source_port": "bottom",
+      "target_port": "top",
+      "flow": "write"
+    },
+    {
+      "id": "a12",
+      "source": "propose",
+      "target": "checkpoint",
+      "source_port": "bottom",
+      "target_port": "top",
+      "flow": "write"
+    },
+    {
+      "id": "a13",
+      "source": "record",
+      "target": "operator2",
+      "source_port": "left",
+      "target_port": "right",
+      "flow": "data"
+    },
+    {
+      "id": "a14",
+      "source": "checkpoint",
+      "target": "executor",
+      "source_port": "right",
+      "target_port": "left",
+      "flow": "data"
+    },
+    {
+      "id": "a15",
+      "source": "operator2",
+      "target": "executor",
+      "source_port": "bottom",
+      "target_port": "bottom",
+      "flow": "control",
+      "label": "approve --execute"
+    },
+    {
+      "id": "a16",
+      "source": "executor",
+      "target": "sandbox",
+      "source_port": "right",
+      "target_port": "left",
+      "flow": "control"
+    }
+  ],
+  "composition": {
+    "profile": "standard"
+  }
+}

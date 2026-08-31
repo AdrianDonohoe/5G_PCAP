@@ -146,6 +146,79 @@ each pending record with a judge model distinct from the generator.
 
 ## Architecture
 
+![Dispatch pipeline — raise or detect, handle, human-gated execution](./docs/diagrams/pipeline.png)
+
+The diagram's source of truth is
+[`docs/diagrams/pipeline.json`](./docs/diagrams/pipeline.json)
+(fireworks-tech-graph IR); the render and PNG recipes are in
+[`docs/diagrams/README.md`](./docs/diagrams/README.md).
+
+**The spine.** One LangGraph `StateGraph` runs a single deterministic
+linear path per incident:
+
+`gather → pcap agent → kpi agent → log agent → correlate → investigate
+→ propose → approval interrupt → execute`
+
+`gather` validates the Alarm event and the stub into typed state and
+fixes the record path. The three specialist nodes then replace only the
+stub evidence items of their own source, so an event handled with a stub
+specialist keeps honest placeholder evidence in the record. The graph is
+compiled with a sqlite `SqliteSaver` checkpointer keyed by
+`incident_id` — that is the whole resume story: `approve` and `reject`
+are fresh processes that resume the checkpointed graph at the interrupt.
+
+**Grounding contracts, per specialist.** Each agent can only say what
+its source proves:
+
+- **PCAP agent** — 5gcap decodes the event's captures and a
+  `triage analyze` run analyzes the export; every finding carries a
+  decode citation (e.g. `flow:1:13`), and findings without one are
+  dropped.
+- **Log agent** — docker stdout logs for the event's window, LLM
+  extraction with a code-enforced exact-log-line check: every citation
+  must be a verbatim log line or the finding is dropped.
+- **KPI agent** — deterministic 5gcap KPI computation compared against
+  the committed Golden baseline; computed values only, no free text.
+
+**Correlation.** `link()` joins the three evidence sources strictly by
+shared key equality: items sharing a key value inside the event's time
+window (the window is candidate scope, never a link predicate) become
+links, ordered by evidence index. A key value identifying more than two
+items is ambiguous and links nothing, and two items that disagree on a
+shared key never link — the pipeline never guesses a join.
+
+**Root-cause investigation.** A LATS search over the correlated
+inventory — triage's `Tree` imported as a library — replaces the stub's
+narrative with a grounded root cause.
+
+**Proposal and executor.** The proposer selects one action from the
+fixed five-action vocabulary and drafts a justification; the Executor
+renders the commands from deterministic templates, and its render rail
+rejects unknown NFs, path escapes, bad IMSIs and unknown scenarios — an
+invalid selection yields no proposal, and the record says so honestly.
+The proposal hash over the three proposal fields is written into the
+record at handle time.
+
+**The approval gate.** `approval` is a LangGraph `interrupt`: the
+pipeline stops with the record marked **pending** and nothing executed.
+On resume the `execute` node first re-checks the record's hash (a
+tampered record refuses to run), records a rejection without touching
+the sandbox, or renders/applies the commands — dry-run unless
+`--execute`.
+
+**Offline posture (ADR-0002).** Every live default sits behind a seam —
+the 5gcap and triage subprocesses, the docker logs call, the log
+extraction, the root-cause search and the proposal selection — and the
+test suite injects stubs through those seams, so pytest never builds the
+Groq predictor and never costs a call. The only live LLM calls are lazy
+and key-guarded: the log extraction, the root-cause search, the
+proposal.
+
+**Runtime artifacts.** The Incident Record lands in
+`dispatch/records/<incident_id>.md`, the checkpoint store in
+`dispatch/state/checkpoints.sqlite` — both gitignored and regenerable
+per incident.
+
 - [`docs/adr/0001-incident-orchestration.md`](./docs/adr/0001-incident-orchestration.md)
   — the orchestration decision: the LangGraph spine, the specialist
   fan-out, the correlation of multi-source evidence, the approval gate.

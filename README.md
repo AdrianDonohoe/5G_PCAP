@@ -1,8 +1,9 @@
 # 5G_PCAP
 
 5G control-plane capture analysis: decode NGAP/NAS (N2), PFCP (N4), and SBI
-(HTTP/2) captures, map per-UE flows, compute KPIs, and triage failed
-procedures with an LLM agent.
+(HTTP/2) captures, map per-UE flows, compute KPIs, triage failed
+procedures with an LLM agent, and run incidents through a human-gated
+remediation pipeline.
 
 ## Layout
 
@@ -22,10 +23,18 @@ procedures with an LLM agent.
   captures for `5gcap` and labeled failure-injection scenario fixtures
   (`./capture.sh --scenario <name>`) for triage's evals. See
   [`sandbox/README.md`](sandbox/README.md).
+- [`dispatch/`](dispatch/) — event-driven incident orchestration over the
+  stack: a KPI-degradation detector or a human raises an Alarm event,
+  PCAP/Log/KPI specialist agents ground evidence against the decode,
+  core logs and the Golden baseline, a root-cause search correlates it,
+  and a remediation proposal from a fixed five-action vocabulary waits
+  at a Human approval gate. A real end-to-end sample Incident Record is
+  committed. See [`dispatch/README.md`](dispatch/README.md).
 - [`CONTEXT.md`](CONTEXT.md) — 5gcap domain glossary (Capture, Flow,
   Procedure, KPI, Partial Flow); [`triage/CONTEXT.md`](triage/CONTEXT.md) —
-  triage domain glossary. [`CONTEXT-MAP.md`](CONTEXT-MAP.md) maps the two
-  contexts and their relationships.
+  triage domain glossary; [`dispatch/CONTEXT.md`](dispatch/CONTEXT.md) —
+  dispatch domain glossary. [`CONTEXT-MAP.md`](CONTEXT-MAP.md) maps the
+  three contexts and their relationships.
 - [`docs/adr/`](docs/adr/) — architecture decision records.
 
 ## Development
@@ -38,6 +47,12 @@ uv run pytest
 
 ```
 cd triage
+uv sync
+uv run pytest
+```
+
+```
+cd dispatch
 uv sync
 uv run pytest
 ```

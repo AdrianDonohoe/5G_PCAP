@@ -1,0 +1,172 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 860" width="1080" height="860" data-generator="fireworks-tech-graph" data-schema-version="1" data-text-metrics="heuristic-v1" data-style-id="1" data-visual-theme="Flat Icon" data-diagram-type="agent" data-motion-scene="" data-semantic-profile="generic" data-semantic-valid="true" data-quality-profile="standard" data-max-bends-per-edge="12" data-max-total-bends="100" data-max-route-stretch="5.0" data-max-bridged-crossings="8" data-min-node-gap="0.0" data-min-container-gutter="0.0" data-min-label-clearance="2.0" data-min-segment-length="0.0">
+  <defs>
+    <marker id="arrowA" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#7c3aed"/>
+    </marker>
+    <marker id="arrowB" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#10b981"/>
+    </marker>
+    <marker id="arrowC" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/>
+    </marker>
+    <marker id="arrowE" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#f97316"/>
+    </marker>
+    <marker id="arrowF" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#7c3aed"/>
+    </marker>
+    <marker id="arrowG" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#ef4444"/>
+    </marker>
+    <marker id="arrowH" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#6b7280"/>
+    </marker>
+    <filter id="shadowSoft" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <filter id="shadowGlass" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="16" flood-color="#020617" flood-opacity="0.28"/>
+    </filter>
+    <style>
+    text { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Microsoft JhengHei', 'SimHei', sans-serif; }
+    .title { font-size: 30px; font-weight: 700; fill: #111827; }
+    .subtitle { font-size: 14px; font-weight: 500; fill: #6b7280; }
+    .section { font-size: 13px; font-weight: 700; fill: #2563eb; letter-spacing: 1.4px; }
+    .section-sub { font-size: 12px; font-weight: 500; fill: #94a3b8; }
+    .node-title { font-weight: 700; fill: #111827; }
+    .node-sub { font-size: 12px; font-weight: 500; fill: #6b7280; }
+    .node-type { font-size: 12px; font-weight: 700; fill: #9ca3af; letter-spacing: 0.08em; }
+    .arrow-label { font-size: 12px; font-weight: 600; fill: #6b7280; }
+    .legend { font-size: 12px; font-weight: 500; fill: #6b7280; }
+    .footnote { font-size: 12px; font-weight: 500; fill: #94a3b8; }
+    .metric-label { font-size: 8.5px; font-weight: 700; fill: #94a3b8; text-transform: uppercase; }
+    .metric-value { font-size: 9.5px; font-weight: 700; fill: #111827; }
+    </style>
+  </defs>
+  <rect data-graph-role="background" width="1080.0" height="860.0" fill="#ffffff"/>
+  <text x="540.0" y="24" text-anchor="middle" font-size="11.0" font-weight="600" fill="#94a3b8">5G DISPATCH · INCIDENT PIPELINE</text>
+  <text x="1052.0" y="24" text-anchor="end" font-size="11.0" font-weight="600" fill="#94a3b8">STYLE-1 · FLAT ICON</text>
+  <text x="540.0" y="56" text-anchor="middle" class="title">Dispatch — one incident, end to end</text>
+  <text x="540.0" y="82" text-anchor="middle" class="subtitle">raise or detect · handle · human-gated execution</text>
+  <g id="raise" data-graph-role="container" data-container-id="raise" data-semantic-role="boundary" data-graph-bounds="30,80,1050,260">
+  <rect data-graph-role="container" x="30.0" y="80.0" width="1020.0" height="180.0" rx="16.0" fill="none" stroke="#dbe5f1" stroke-width="1.4" stroke-dasharray="6 5"/>
+  <text x="48.0" y="104.0" class="section">RAISE OR DETECT THE ALARM EVENT</text>
+    <rect id="raise-header" data-graph-role="reserved" data-reserved-kind="container-header" x="38" y="86" width="249.18" height="30" fill="none" stroke="none"/>
+  </g>
+  <g id="handle" data-graph-role="container" data-container-id="handle" data-semantic-role="boundary" data-graph-bounds="30,270,1050,640">
+  <rect data-graph-role="container" x="30.0" y="270.0" width="1020.0" height="370.0" rx="16.0" fill="none" stroke="#dbe5f1" stroke-width="1.4" stroke-dasharray="6 5"/>
+  <text x="48.0" y="294.0" class="section">HANDLE — THE DISPATCHER</text>
+    <rect id="handle-header" data-graph-role="reserved" data-reserved-kind="container-header" x="38" y="276" width="191.46" height="30" fill="none" stroke="none"/>
+  </g>
+  <g id="gate" data-graph-role="container" data-container-id="gate" data-semantic-role="boundary" data-graph-bounds="30,670,1050,840">
+  <rect data-graph-role="container" x="30.0" y="670.0" width="1020.0" height="170.0" rx="16.0" fill="none" stroke="#dbe5f1" stroke-width="1.4" stroke-dasharray="6 5"/>
+  <text x="48.0" y="694.0" class="section">APPROVAL GATE + EXECUTION</text>
+    <rect id="gate-header" data-graph-role="reserved" data-reserved-kind="container-header" x="38" y="676" width="206.54" height="30" fill="none" stroke="none"/>
+  </g>
+  <path id="a1" data-graph-role="edge" data-edge-id="a1" data-source="operator" data-target="event" data-edge-kind="flow" data-topic-id="" data-flow="control" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="2" data-route-stretch="1.0" data-bridges="" d="M 150,186 L 150,193 L 556,193 L 556,200" fill="none" stroke="#7c3aed" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowA)"/>
+  <path id="a2" data-graph-role="edge" data-edge-id="a2" data-source="detect_kpi" data-target="event" data-edge-kind="flow" data-topic-id="" data-flow="control" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="2" data-route-stretch="1.0" data-bridges="" d="M 870,186 L 870,193 L 574,193 L 574,200" fill="none" stroke="#7c3aed" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowA)"/>
+  <path id="a3" data-graph-role="edge" data-edge-id="a3" data-source="event" data-target="pcap" data-edge-kind="flow" data-topic-id="" data-flow="control" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="2" data-route-stretch="1.0" data-bridges="" d="M 547,256 L 547,276 L 235,276 L 235,310" fill="none" stroke="#7c3aed" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowA)"/>
+  <path id="a4" data-graph-role="edge" data-edge-id="a4" data-source="event" data-target="kpi" data-edge-kind="flow" data-topic-id="" data-flow="control" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="2" data-route-stretch="1.0" data-bridges="" d="M 565,256 L 565,276.4 L 435,276.4 L 435,310" fill="none" stroke="#7c3aed" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowA)"/>
+  <path id="a5" data-graph-role="edge" data-edge-id="a5" data-source="event" data-target="log" data-edge-kind="flow" data-topic-id="" data-flow="control" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="2" data-route-stretch="1.0" data-bridges="" d="M 583,256 L 583,276.4 L 635,276.4 L 635,310" fill="none" stroke="#7c3aed" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowA)"/>
+  <path id="a6" data-graph-role="edge" data-edge-id="a6" data-source="pcap" data-target="correlate" data-edge-kind="flow" data-topic-id="" data-flow="data" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="2" data-route-stretch="1.0" data-bridges="" d="M 235,366 L 235,379.6 L 417,379.6 L 417,400" fill="none" stroke="#f97316" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowE)"/>
+  <path id="a7" data-graph-role="edge" data-edge-id="a7" data-source="kpi" data-target="correlate" data-edge-kind="flow" data-topic-id="" data-flow="data" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="0" data-route-stretch="1.0" data-bridges="" d="M 435,366 L 435,400" fill="none" stroke="#f97316" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowE)"/>
+  <path id="a8" data-graph-role="edge" data-edge-id="a8" data-source="log" data-target="correlate" data-edge-kind="flow" data-topic-id="" data-flow="data" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="2" data-route-stretch="1.0" data-bridges="" d="M 635,366 L 635,379.6 L 453,379.6 L 453,400" fill="none" stroke="#f97316" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowE)"/>
+  <path id="a9" data-graph-role="edge" data-edge-id="a9" data-source="correlate" data-target="investigate" data-edge-kind="flow" data-topic-id="" data-flow="data" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="0" data-route-stretch="1.0" data-bridges="" d="M 435,452 L 435,480" fill="none" stroke="#f97316" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowE)"/>
+  <path id="a10" data-graph-role="edge" data-edge-id="a10" data-source="investigate" data-target="propose" data-edge-kind="flow" data-topic-id="" data-flow="control" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="0" data-route-stretch="1.0" data-bridges="" d="M 435,536 L 435,560" fill="none" stroke="#7c3aed" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowA)"/>
+  <path id="a11" data-graph-role="edge" data-edge-id="a11" data-source="propose" data-target="record" data-edge-kind="flow" data-topic-id="" data-flow="write" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="2" data-route-stretch="1.0" data-bridges="" d="M 426,616 L 426,636.4 L 405,636.4 L 405,710" fill="none" stroke="#10b981" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowB)"/>
+  <path id="a12" data-graph-role="edge" data-edge-id="a12" data-source="propose" data-target="checkpoint" data-edge-kind="flow" data-topic-id="" data-flow="write" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="2" data-route-stretch="1.0" data-bridges="" d="M 444,616 L 444,636.4 L 600,636.4 L 600,710" fill="none" stroke="#10b981" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowB)"/>
+  <path id="a13" data-graph-role="edge" data-edge-id="a13" data-source="record" data-target="operator2" data-edge-kind="flow" data-topic-id="" data-flow="data" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="0" data-route-stretch="1.0" data-bridges="" d="M 330,738 L 170,738" fill="none" stroke="#f97316" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowE)"/>
+  <path id="a14" data-graph-role="edge" data-edge-id="a14" data-source="checkpoint" data-target="executor" data-edge-kind="flow" data-topic-id="" data-flow="data" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="0" data-route-stretch="1.0" data-bridges="" d="M 680,738 L 700,738" fill="none" stroke="#f97316" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowE)"/>
+  <path id="a15" data-graph-role="edge" data-edge-id="a15" data-source="operator2" data-target="executor" data-edge-kind="flow" data-topic-id="" data-flow="control" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="2" data-route-stretch="1.072" data-bridges="" d="M 105,766 L 105,790 L 775,790 L 775,766" fill="none" stroke="#7c3aed" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowA)"/>
+  <path id="a16" data-graph-role="edge" data-edge-id="a16" data-source="executor" data-target="sandbox" data-edge-kind="flow" data-topic-id="" data-flow="control" data-motion-role="" data-motion-stage="" data-motion-order="" data-protocol="" data-via="" data-critical-path-id="" data-critical-hop="" data-critical-hops="" data-critical="false" data-bends="0" data-route-stretch="1.0" data-bridges="" d="M 850,738 L 880,738" fill="none" stroke="#7c3aed" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowA)"/>
+  <g id="node-operator" data-graph-role="node" data-node-id="operator" data-semantic-role="rect" data-motion-role="" data-motion-stage="" data-motion-order="" data-parent="" data-deployment-id="" data-topic-id="" data-span-id="" data-station-order="" data-status="" data-start-ms="" data-duration-ms="" data-parent-span="" data-graph-bounds="60,130,240,186">
+  <rect x="60.0" y="130.0" width="180.0" height="56.0" rx="10.0" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.8" filter="url(#shadowSoft)"/>
+  <text x="150.0" y="158.0" text-anchor="middle" class="node-title" font-size="18.0">Operator</text>
+  <text x="150.0" y="180.0" text-anchor="middle" class="node-sub">raises · human|alarm</text>
+  </g>
+  <g id="node-detect_kpi" data-graph-role="node" data-node-id="detect_kpi" data-semantic-role="rect" data-motion-role="" data-motion-stage="" data-motion-order="" data-parent="" data-deployment-id="" data-topic-id="" data-span-id="" data-station-order="" data-status="" data-start-ms="" data-duration-ms="" data-parent-span="" data-graph-bounds="760,130,980,186">
+  <rect x="760.0" y="130.0" width="220.0" height="56.0" rx="10.0" fill="#eff6ff" stroke="#2563eb" stroke-width="1.8" filter="url(#shadowSoft)"/>
+  <text x="870.0" y="158.0" text-anchor="middle" class="node-title" font-size="18.0">detect-kpi</text>
+  <text x="870.0" y="180.0" text-anchor="middle" class="node-sub">5gcap + Golden baseline</text>
+  </g>
+  <g id="node-event" data-graph-role="node" data-node-id="event" data-semantic-role="speech" data-motion-role="" data-motion-stage="" data-motion-order="" data-parent="" data-deployment-id="" data-topic-id="" data-span-id="" data-station-order="" data-status="" data-start-ms="" data-duration-ms="" data-parent-span="" data-graph-bounds="440,200,690,256">
+  <path d="M 450.0 200.0 L 680.0 200.0 Q 690.0 200.0 690.0 210.0 L 690.0 246.0 Q 690.0 256.0 680.0 256.0 L 466.0 256.0 L 452.0 274.0 L 456.0 256.0 L 450.0 256.0 Q 440.0 256.0 440.0 246.0 L 440.0 210.0 Q 440.0 200.0 450.0 200.0 Z" fill="#fff7ed" stroke="#ea580c" stroke-width="2.0"/>
+  <text x="565.0" y="228.0" text-anchor="middle" class="node-title" font-size="18.0">Alarm event JSON</text>
+  <text x="565.0" y="250.0" text-anchor="middle" class="node-sub">incident_id · window · captures</text>
+  </g>
+  <g id="node-pcap" data-graph-role="node" data-node-id="pcap" data-semantic-role="rect" data-motion-role="" data-motion-stage="" data-motion-order="" data-parent="" data-deployment-id="" data-topic-id="" data-span-id="" data-station-order="" data-status="" data-start-ms="" data-duration-ms="" data-parent-span="" data-graph-bounds="150,310,320,366">
+  <rect x="150.0" y="310.0" width="170.0" height="56.0" rx="10.0" fill="#faf5ff" stroke="#7c3aed" stroke-width="1.8" filter="url(#shadowSoft)"/>
+  <text x="235.0" y="338.0" text-anchor="middle" class="node-title" font-size="18.0">PCAP agent</text>
+  <text x="235.0" y="360.0" text-anchor="middle" class="node-sub">decode + triage analyze</text>
+  </g>
+  <g id="node-kpi" data-graph-role="node" data-node-id="kpi" data-semantic-role="rect" data-motion-role="" data-motion-stage="" data-motion-order="" data-parent="" data-deployment-id="" data-topic-id="" data-span-id="" data-station-order="" data-status="" data-start-ms="" data-duration-ms="" data-parent-span="" data-graph-bounds="350,310,520,366">
+  <rect x="350.0" y="310.0" width="170.0" height="56.0" rx="10.0" fill="#eff6ff" stroke="#2563eb" stroke-width="1.8" filter="url(#shadowSoft)"/>
+  <text x="435.0" y="338.0" text-anchor="middle" class="node-title" font-size="18.0">KPI agent</text>
+  <text x="435.0" y="360.0" text-anchor="middle" class="node-sub">deviations vs Golden</text>
+  </g>
+  <g id="node-log" data-graph-role="node" data-node-id="log" data-semantic-role="rect" data-motion-role="" data-motion-stage="" data-motion-order="" data-parent="" data-deployment-id="" data-topic-id="" data-span-id="" data-station-order="" data-status="" data-start-ms="" data-duration-ms="" data-parent-span="" data-graph-bounds="550,310,720,366">
+  <rect x="550.0" y="310.0" width="170.0" height="56.0" rx="10.0" fill="#faf5ff" stroke="#7c3aed" stroke-width="1.8" filter="url(#shadowSoft)"/>
+  <text x="635.0" y="338.0" text-anchor="middle" class="node-title" font-size="18.0">Log agent</text>
+  <text x="635.0" y="360.0" text-anchor="middle" class="node-sub">docker logs · verbatim</text>
+  </g>
+  <g id="node-correlate" data-graph-role="node" data-node-id="correlate" data-semantic-role="rect" data-motion-role="" data-motion-stage="" data-motion-order="" data-parent="" data-deployment-id="" data-topic-id="" data-span-id="" data-station-order="" data-status="" data-start-ms="" data-duration-ms="" data-parent-span="" data-graph-bounds="315,400,555,452">
+  <rect x="315.0" y="400.0" width="240.0" height="52.0" rx="10.0" fill="#eff6ff" stroke="#2563eb" stroke-width="1.8" filter="url(#shadowSoft)"/>
+  <text x="435.0" y="426.0" text-anchor="middle" class="node-title" font-size="18.0">correlate</text>
+  <text x="435.0" y="448.0" text-anchor="middle" class="node-sub">strict equality · no guesses</text>
+  </g>
+  <g id="node-investigate" data-graph-role="node" data-node-id="investigate" data-semantic-role="hexagon" data-motion-role="" data-motion-stage="" data-motion-order="" data-parent="" data-deployment-id="" data-topic-id="" data-span-id="" data-station-order="" data-status="" data-start-ms="" data-duration-ms="" data-parent-span="" data-graph-bounds="315,480,555,536">
+  <path d="M 337.0 480.0 L 533.0 480.0 L 555.0 508.0 L 533.0 536.0 L 337.0 536.0 L 315.0 508.0 Z" fill="#faf5ff" stroke="#7c3aed" stroke-width="2.0" filter="url(#shadowSoft)"/>
+  <text x="435.0" y="508.0" text-anchor="middle" class="node-title" font-size="18.0">investigate — LATS</text>
+  <text x="435.0" y="530.0" text-anchor="middle" class="node-sub">triage Tree → root cause</text>
+  </g>
+  <g id="node-propose" data-graph-role="node" data-node-id="propose" data-semantic-role="double_rect" data-motion-role="" data-motion-stage="" data-motion-order="" data-parent="" data-deployment-id="" data-topic-id="" data-span-id="" data-station-order="" data-status="" data-start-ms="" data-duration-ms="" data-parent-span="" data-graph-bounds="315,560,555,616">
+  <rect x="315.0" y="560.0" width="240.0" height="56.0" rx="10.0" fill="#faf5ff" stroke="#7c3aed" stroke-width="2.0" filter="url(#shadowSoft)"/>
+  <rect x="321.0" y="566.0" width="228.0" height="44.0" rx="7.0" fill="none" stroke="#7c3aed" stroke-width="1.2" opacity="0.65"/>
+  <text x="435.0" y="588.0" text-anchor="middle" class="node-title" font-size="18.0">propose</text>
+  <text x="435.0" y="610.0" text-anchor="middle" class="node-sub">5 actions · templates · hash</text>
+  </g>
+  <g id="node-operator2" data-graph-role="node" data-node-id="operator2" data-semantic-role="rect" data-motion-role="" data-motion-stage="" data-motion-order="" data-parent="" data-deployment-id="" data-topic-id="" data-span-id="" data-station-order="" data-status="" data-start-ms="" data-duration-ms="" data-parent-span="" data-graph-bounds="40,710,170,766">
+  <rect x="40.0" y="710.0" width="130.0" height="56.0" rx="10.0" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.8" filter="url(#shadowSoft)"/>
+  <text x="105.0" y="738.0" text-anchor="middle" class="node-title" font-size="18.0">Operator</text>
+  <text x="105.0" y="760.0" text-anchor="middle" class="node-sub">approve · reject</text>
+  </g>
+  <g id="node-record" data-graph-role="node" data-node-id="record" data-semantic-role="folder" data-motion-role="" data-motion-stage="" data-motion-order="" data-parent="" data-deployment-id="" data-topic-id="" data-span-id="" data-station-order="" data-status="" data-start-ms="" data-duration-ms="" data-parent-span="" data-graph-bounds="330,710,480,766">
+  <path d="M 330.0 728.0 L 350.4 728.0 L 359.58 710.0 L 381.0 710.0 L 480.0 710.0 L 480.0 766.0 L 330.0 766.0 Z" fill="#fff7ed" stroke="#ea580c" stroke-width="2.0" filter="url(#shadowSoft)"/>
+  <line x1="352.0" y1="752.0" x2="458.0" y2="752.0" stroke="#fdba74" stroke-opacity="0.35" stroke-width="1.2"/>
+  <line x1="352.0" y1="766.0" x2="458.0" y2="766.0" stroke="#fdba74" stroke-opacity="0.35" stroke-width="1.2"/>
+  <line x1="352.0" y1="780.0" x2="458.0" y2="780.0" stroke="#fdba74" stroke-opacity="0.35" stroke-width="1.2"/>
+  <text x="405.0" y="792.0" text-anchor="middle" class="node-title" font-size="14.65">Incident Record</text>
+  <text x="405.0" y="810.0" text-anchor="middle" class="node-sub">pending at the gate</text>
+  </g>
+  <g id="node-checkpoint" data-graph-role="node" data-node-id="checkpoint" data-semantic-role="cylinder" data-motion-role="" data-motion-stage="" data-motion-order="" data-parent="" data-deployment-id="" data-topic-id="" data-span-id="" data-station-order="" data-status="" data-start-ms="" data-duration-ms="" data-parent-span="" data-graph-bounds="520,710,680,766">
+  <ellipse cx="600.0" cy="717.0" rx="40.0" ry="7.0" fill="#fff7ed" stroke="#ea580c" stroke-width="2.2"/>
+  <rect x="520.0" y="717.0" width="160.0" height="42.0" fill="#fff7ed" stroke="#ea580c" stroke-width="2.2"/>
+  <ellipse cx="600.0" cy="759.0" rx="40.0" ry="7.0" fill="#fff7ed" stroke="#ea580c" stroke-width="2.2"/>
+  <ellipse cx="600.0" cy="731.28" rx="40.0" ry="7.0" fill="none" stroke="#ea580c" stroke-opacity="0.45" stroke-width="1.2"/>
+  <ellipse cx="600.0" cy="743.6" rx="40.0" ry="7.0" fill="none" stroke="#ea580c" stroke-opacity="0.25" stroke-width="1.2"/>
+  <text x="600.0" y="732.0" text-anchor="middle" class="node-title" font-size="13.39">checkpoints.sqlite</text>
+  <text x="600.0" y="756.0" text-anchor="middle" class="node-sub">resume across runs</text>
+  </g>
+  <g id="node-executor" data-graph-role="node" data-node-id="executor" data-semantic-role="rect" data-motion-role="" data-motion-stage="" data-motion-order="" data-parent="" data-deployment-id="" data-topic-id="" data-span-id="" data-station-order="" data-status="" data-start-ms="" data-duration-ms="" data-parent-span="" data-graph-bounds="700,710,850,766">
+  <rect x="700.0" y="710.0" width="150.0" height="56.0" rx="10.0" fill="#fef2f2" stroke="#dc2626" stroke-width="1.8" filter="url(#shadowSoft)"/>
+  <text x="775.0" y="738.0" text-anchor="middle" class="node-title" font-size="18.0">executor</text>
+  <text x="775.0" y="760.0" text-anchor="middle" class="node-sub">dry-run · --execute</text>
+  </g>
+  <g id="node-sandbox" data-graph-role="node" data-node-id="sandbox" data-semantic-role="rect" data-motion-role="" data-motion-stage="" data-motion-order="" data-parent="" data-deployment-id="" data-topic-id="" data-span-id="" data-station-order="" data-status="" data-start-ms="" data-duration-ms="" data-parent-span="" data-graph-bounds="880,710,1020,766">
+  <rect x="880.0" y="710.0" width="140.0" height="56.0" rx="10.0" fill="#f0fdfa" stroke="#0d9488" stroke-width="1.8" filter="url(#shadowSoft)"/>
+  <text x="950.0" y="738.0" text-anchor="middle" class="node-title" font-size="18.0">sandbox lab</text>
+  <text x="950.0" y="760.0" text-anchor="middle" class="node-sub">Open5GS + UERANSIM</text>
+  </g>
+  <g id="a1-label" data-graph-role="label" data-owner="a1" data-graph-bounds="330.16,162,375.84,182">
+  <rect x="330.16" y="162.0" width="45.68" height="20" rx="6" fill="#ffffff" opacity="0.94"/>
+  <text x="353.0" y="176.0" text-anchor="middle" class="arrow-label">raise</text>
+  </g>
+  <g id="a2-label" data-graph-role="label" data-owner="a2" data-graph-bounds="694.12,162,749.88,182">
+  <rect x="694.12" y="162.0" width="55.76" height="20" rx="6" fill="#ffffff" opacity="0.94"/>
+  <text x="722.0" y="176.0" text-anchor="middle" class="arrow-label">detect</text>
+  </g>
+  <g id="a15-label" data-graph-role="label" data-owner="a15" data-graph-bounds="375.16,777,504.84,797">
+  <rect x="375.16" y="777.0" width="129.68" height="20" rx="6" fill="#ffffff" opacity="0.94"/>
+  <text x="440.0" y="791.0" text-anchor="middle" class="arrow-label">approve --execute</text>
+  </g>
+</svg>

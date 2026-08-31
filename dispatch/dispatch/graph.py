@@ -120,7 +120,8 @@ def _read_record_hash(path: str) -> str:
 
 def build_graph(state_path, records_dir, sandbox_root, runner=None,
                 kpi_runner=None, triage_runner=None, log_runner=None,
-                extractor=None, search=None, proposer=None, episodes=None):
+                extractor=None, search=None, proposer=None, episodes=None,
+                runbooks=None):
     """Compile the Incident Manager graph with a sqlite checkpointer. The
     checkpointer's connection lives as long as the compiled graph.
     ``kpi_runner`` stubs the 5gcap subprocess in tests; ``triage_runner``
@@ -131,10 +132,13 @@ def build_graph(state_path, records_dir, sandbox_root, runner=None,
     pattern); ``proposer`` stubs the proposal selection. ``episodes`` is
     the Episode store seam (spec #33): the investigate node seeds the
     objective from it and the execute node writes the decided Episode to
-    it; absent, the memory path does nothing and behavior is exactly as
-    before. Every live default stays behind its seam (ADR-0002: pytest
-    never builds the Groq predictor); the store itself is pure file I/O,
-    so tests inject tmp-backed stores rather than stubs."""
+    it; ``runbooks`` is the procedural-memory seam (spec #33), the
+    parsed committed Runbooks the propose node matches and prepends
+    ahead of the proposer call; absent, the memory paths do nothing and
+    behavior is exactly as before. Every live default stays behind its
+    seam (ADR-0002: pytest never builds the Groq predictor); the store
+    and the runbooks are pure file I/O, so tests inject tmp-backed
+    stores and parsed Runbooks rather than stubs."""
     records_dir = Path(records_dir)
     records_dir.mkdir(parents=True, exist_ok=True)
     Path(state_path).parent.mkdir(parents=True, exist_ok=True)
@@ -182,7 +186,8 @@ def build_graph(state_path, records_dir, sandbox_root, runner=None,
 
     def propose(state: State) -> State:
         proposal = run_proposal(state["event"], state["root_cause"],
-                                proposer=proposer)
+                                proposer=proposer, runbooks=runbooks,
+                                evidence=state["evidence"])
         if proposal is not None:
             try:
                 proposal["commands"] = executor.dry_run(proposal)

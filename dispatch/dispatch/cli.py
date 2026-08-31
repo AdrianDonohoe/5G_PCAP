@@ -16,19 +16,24 @@ from .evidence import AlarmEvent
 from .graph import build_graph, run_approval, run_to_approval
 from .kpi import detect_kpi
 from .memory import EpisodeStore
+from .runbook import load_runbooks
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 STATE_PATH = REPO_ROOT / "dispatch" / "state" / "checkpoints.sqlite"
 RECORDS_DIR = REPO_ROOT / "dispatch" / "records"
+RUNBOOKS_DIR = REPO_ROOT / "dispatch" / "runbooks"
 SANDBOX_ROOT = REPO_ROOT / "sandbox"
 
 
 def _graph():
     # The Episode store lives beside the checkpointer, so both resume
     # artifacts follow the same state dir (and the same test patch).
+    # The runbooks are the committed procedural memory — parsed once per
+    # invocation (and the same test patch keeps the CLI tests hermetic).
     episodes = EpisodeStore(STATE_PATH.parent / "episodes.jsonl")
     return build_graph(STATE_PATH, RECORDS_DIR, SANDBOX_ROOT,
-                       episodes=episodes)
+                       episodes=episodes,
+                       runbooks=load_runbooks(RUNBOOKS_DIR))
 
 
 def main(argv: list[str] | None = None) -> int:

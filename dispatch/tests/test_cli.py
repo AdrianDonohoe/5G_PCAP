@@ -22,6 +22,10 @@ INCIDENT = "inc-n4-upf-timeout-1"
 def tmp_state(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "STATE_PATH", tmp_path / "checkpoints.sqlite")
     monkeypatch.setattr(cli, "RECORDS_DIR", tmp_path / "records")
+    # The runbooks dir is patched too, so the CLI tests never load the
+    # committed seed runbook — the wiring test below drops one in
+    # explicitly.
+    monkeypatch.setattr(cli, "RUNBOOKS_DIR", tmp_path / "runbooks")
     return tmp_path
 
 
@@ -141,6 +145,54 @@ def test_approve_writes_episode_beside_the_checkpoint(tmp_state,
 def test_approve_unknown_incident_errors(tmp_state, capsys):
     assert cli.main(["approve", "never-existed"]) == 1
     assert "no checkpoint" in capsys.readouterr().err
+
+
+# --- Runbooks: the CLI loads the committed dir and passes it through ---
+
+# The specialist seams replace the stub's evidence with nothing, so the
+# CLI path matches runbooks on the procedure alone — the procedure-only
+# +2 still clears the threshold, and the proposer sees the context.
+RUNBOOK_MD = """---
+slug: n4-timeout-restart-upf
+title: Restart the UPF on an N4 timeout
+procedure: n4_upf_timeout
+symptoms:
+  nf: upf
+steps:
+  - Confirm the UPF logged the request.
+resolution:
+  action: restart_nf
+  args:
+    nf: "{nf}"
+---
+"""
+
+
+def test_handle_prepends_matching_runbook_context(tmp_state, monkeypatch):
+    seen = []
+
+    def propose(incident, root_cause):
+        seen.append(incident)
+        return dict(SELECTION)
+
+    monkeypatch.setattr(proposal_mod, "default_propose", lambda: propose)
+    (tmp_state / "runbooks").mkdir()
+    (tmp_state / "runbooks" / "n4-timeout.md").write_text(RUNBOOK_MD)
+    cli.main(["handle", EVENT, "--stub", STUB])
+    assert "Runbooks retrieved from procedural memory" in seen[0]
+
+
+def test_handle_without_runbooks_leaves_the_description_untouched(
+        tmp_state, monkeypatch):
+    seen = []
+
+    def propose(incident, root_cause):
+        seen.append(incident)
+        return dict(SELECTION)
+
+    monkeypatch.setattr(proposal_mod, "default_propose", lambda: propose)
+    cli.main(["handle", EVENT, "--stub", STUB])
+    assert seen == [json.loads(Path(EVENT).read_text())["description"]]
 
 
 # --- detect-kpi: the comparator subcommand at the process boundary ---

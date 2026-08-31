@@ -25,6 +25,7 @@ import dspy
 
 from .executor import ACTIONS
 from .log import GROQ, _groq_lm
+from .runbook import bind_placeholders, match_runbooks, runbook_context
 
 
 class ProposalSignature(dspy.Signature):
@@ -80,7 +81,8 @@ def default_propose():
     return propose
 
 
-def run_proposal(event: dict, root_cause: str, proposer=None) -> dict | None:
+def run_proposal(event: dict, root_cause: str, proposer=None,
+                 runbooks=None, evidence=None) -> dict | None:
     """The Proposal node: run the proposer over the incident and the
     root-cause narrative and return the selection reduced to the three
     fields the Executor renders — {action, args, justification} — or
@@ -91,11 +93,29 @@ def run_proposal(event: dict, root_cause: str, proposer=None) -> dict | None:
     failure — yields None, so the record says so honestly instead of
     proposing something. The selection is rebuilt here from its own
     fields, so an LLM smuggling extra fields (commands, hashes) loses
-    them: the commands come only from the Executor's templates."""
+    them: the commands come only from the Executor's templates.
+
+    ``runbooks`` is the procedural-memory seam (spec #33): matching
+    runbooks are prepended as context ahead of the incident before the
+    proposer call, matched on the structured symptom keys and procedure
+    alone — the proposer seam keeps its exact (incident, root_cause)
+    shape, and the hash keeps covering the three fields only, so a
+    matching runbook changes only the proposer's context. ``evidence``
+    feeds the matching and the {placeholder} arg binding: a selection
+    arg like "{nf}" is replaced by the evidence key's value (first
+    occurrence in inventory order), and a placeholder with no evidence
+    key to bind yields no proposal. With no matching runbook the
+    proposal step behaves exactly as before."""
+    incident = event.get("description", "")
+    if runbooks:
+        matches = match_runbooks(runbooks, event, evidence or [])
+        if matches:
+            incident = runbook_context(matches, evidence or [],
+                                       len(runbooks)) + "\n\n" + incident
     try:
         if proposer is None:
             proposer = default_propose()
-        selection = proposer(event.get("description", ""), root_cause)
+        selection = proposer(incident, root_cause)
     except Exception:
         # LLM failure modes are library-defined (missing key, quota,
         # schema); degrade like the specialists, never crash.
@@ -112,5 +132,11 @@ def run_proposal(event: dict, root_cause: str, proposer=None) -> dict | None:
         # observe_only takes no args — the render rail skips it, so the
         # vocabulary check must reject bogus args here.
         return None
-    return {"action": action, "args": dict(args),
+    args = dict(args)
+    try:
+        if evidence:
+            args = bind_placeholders(args, evidence)
+    except ValueError:
+        return None
+    return {"action": action, "args": args,
             "justification": justification}

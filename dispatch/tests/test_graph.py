@@ -10,9 +10,11 @@ import pytest
 import dispatch.kpi as kpi_mod
 from _helpers import (make_kpi_runner, make_log_runner, make_proposer,
                       make_triage_runner)
+from dispatch.executor import proposal_hash
 from dispatch.graph import build_graph, run_approval, run_to_approval
-from dispatch.memory import Episode, EpisodeStore
+from dispatch.memory import Episode, EpisodeStore, EvidenceKey
 from dispatch.root_cause import Tree, make_execute
+from dispatch.runbook import Runbook
 
 FIXTURES = Path(__file__).parent / "fixtures"
 COMPOSE = """services:
@@ -582,3 +584,92 @@ def test_investigate_objective_untouched_without_episodes(ctx, event, stub):
 
     run_to_approval(_seeded_graph(ctx, None, search), event, stub)
     assert "Past similar incidents" not in objectives[0]
+
+
+# --- Procedural memory: the propose node matches runbooks ---
+
+# The log seam injects real evidence (keys nf=upf), so the runbook's
+# symptom matching and the placeholder binding run against the inventory
+# the propose node sees, not the stub's (which the specialists replace).
+RUNBOOK = Runbook(
+    slug="restart-stuck-upf",
+    title="Restart a stuck UPF",
+    procedure="n4_upf_timeout",
+    symptoms=[EvidenceKey(key="nf", value="upf")],
+    steps=["Confirm the UPF logged the request.",
+           "Restart the upf service."],
+    resolution={"action": "restart_nf", "args": {"nf": "{nf}"}})
+
+
+def _propose_graph(ctx, runbooks=None, proposer=None):
+    windowed = (FIXTURES / "core_logs_n4_timeout.txt").read_text()
+    return build_graph(ctx["state_path"], ctx["records_dir"],
+                       ctx["sandbox_root"],
+                       log_runner=make_log_runner(windowed),
+                       extractor=_log_extractor,
+                       runbooks=runbooks,
+                       proposer=proposer or make_proposer(CANNED_PROPOSAL))
+
+
+def test_propose_prepends_matching_runbook_context(ctx, event, stub):
+    calls = []
+
+    def propose(incident, root_cause):
+        calls.append(incident)
+        return dict(CANNED_PROPOSAL)
+
+    result = run_to_approval(
+        _propose_graph(ctx, runbooks=[RUNBOOK], proposer=propose),
+        event, stub)
+    assert "Runbooks retrieved from procedural memory" in calls[0]
+    assert "Restart a stuck UPF" in calls[0]
+    assert event["description"] in calls[0]
+    assert result["proposal"]["action"] == "restart_nf"
+
+
+def test_propose_without_runbooks_incident_untouched(ctx, event, stub):
+    calls = []
+
+    def propose(incident, root_cause):
+        calls.append(incident)
+        return dict(CANNED_PROPOSAL)
+
+    run_to_approval(_propose_graph(ctx, proposer=propose), event, stub)
+    assert calls == [event["description"]]
+
+
+def test_propose_binds_placeholder_args_and_hashes_the_bound_args(
+        ctx, event, stub):
+    def propose(incident, root_cause):
+        return {"action": "restart_nf", "args": {"nf": "{nf}"},
+                "justification": CANNED_PROPOSAL["justification"]}
+
+    result = run_to_approval(_propose_graph(ctx, proposer=propose),
+                             event, stub)
+    proposal = result["proposal"]
+    assert proposal["args"] == {"nf": "upf"}
+    expected = {"action": "restart_nf", "args": {"nf": "upf"},
+                "justification": CANNED_PROPOSAL["justification"]}
+    assert proposal["hash"] == proposal_hash(expected)
+    assert "restart upf" in "\n".join(proposal["commands"])
+
+
+def test_propose_unbound_placeholder_yields_no_proposal(ctx, event, stub):
+    def propose(incident, root_cause):
+        return {"action": "restart_nf", "args": {"nf": "{missing}"},
+                "justification": "j"}
+
+    result = run_to_approval(_propose_graph(ctx, proposer=propose),
+                             event, stub)
+    assert result["proposal"] is None
+
+
+def test_matching_runbook_does_not_change_the_hash(ctx, event, stub):
+    # AC-3: the proposal hash still covers exactly the three fields, so a
+    # matching runbook changes only the proposer's context, never the hash.
+    other = dict(event, incident_id="inc-hash-compare")
+    plain = run_to_approval(_propose_graph(ctx), event, stub)
+    matched = run_to_approval(_propose_graph(ctx, runbooks=[RUNBOOK]),
+                              other, stub)
+    assert plain["proposal"]["hash"] == matched["proposal"]["hash"]
+    assert plain["proposal"]["hash"] == proposal_hash(CANNED_PROPOSAL)

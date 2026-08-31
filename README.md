@@ -36,6 +36,18 @@ remediation pipeline.
   dispatch domain glossary. [`CONTEXT-MAP.md`](CONTEXT-MAP.md) maps the
   three contexts and their relationships.
 - [`docs/adr/`](docs/adr/) — architecture decision records.
+- Diagrams — [`docs/diagrams/`](docs/diagrams/) holds the 5gcap pipeline
+  diagram from the Medium article (fireworks-tech-graph IR + rendered
+  SVG + PNG, style 2 Dark Terminal; the regeneration recipe, including
+  the no-system-fonts PNG trap, is in its
+  [`README`](docs/diagrams/README.md));
+  [`dispatch/docs/diagrams/`](dispatch/docs/diagrams/) holds the
+  dispatch pipeline's set — the same IR + SVG + PNG trio plus
+  LangGraph's own mermaid view of the compiled graph for comparison —
+  with the same recipe in its
+  [`README`](dispatch/docs/diagrams/README.md); and
+  [`triage/docs/diagrams/`](triage/docs/diagrams/) holds the triage
+  invocation-flow diagram (IR + SVG).
 
 ## Development
 

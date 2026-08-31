@@ -121,6 +121,23 @@ def test_reject_records_rejection(tmp_state):
     assert "**rejected**" in record
 
 
+def test_approve_writes_episode_beside_the_checkpoint(tmp_state,
+                                                     monkeypatch):
+    # The Episode store follows STATE_PATH, so the CLI's memory artifacts
+    # land in the same state dir as the checkpoint — and the tmp_state
+    # patch keeps the suite from ever touching the real store.
+    from dispatch.memory import EpisodeStore
+
+    _inject_proposal(monkeypatch)
+    cli.main(["handle", EVENT, "--stub", STUB])
+    assert cli.main(["approve", INCIDENT]) == 0
+    stored = EpisodeStore(tmp_state / "episodes.jsonl").load()
+    assert len(stored) == 1
+    assert stored[0].incident_id == INCIDENT
+    assert stored[0].decision == "approved-dry-run"
+    assert stored[0].action == "restart_nf"
+
+
 def test_approve_unknown_incident_errors(tmp_state, capsys):
     assert cli.main(["approve", "never-existed"]) == 1
     assert "no checkpoint" in capsys.readouterr().err

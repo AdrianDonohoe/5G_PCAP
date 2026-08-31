@@ -25,6 +25,7 @@ import dspy
 from triage.search import (ExpandSignature as TriageExpandSignature,
                            EvaluateSignature, Tree, parse_action)
 from .log import GROQ, _groq_lm
+from .memory import memory_context
 
 # The Dispatcher's action vocabulary: triage's tools are decode-specific
 # (topology, spec, memory), only the search discipline carries over.
@@ -196,17 +197,26 @@ def default_search(evidence: list, links: list):
 
 
 def run_root_cause(event: dict, evidence: list, links: list,
-                   search=None) -> str:
+                   search=None, episodes=None) -> str:
     """The Investigate node: run the root-cause search over the correlated
     multi-source inventory and return the winning trajectory's narrative,
     grounded. ``search`` is the stub seam; the live search is the LATS
     Tree whose Groq predictors are built lazily (ADR-0002). Any failure
     yields "" — the record renders the honest fallback, never an invented
     root cause. The search's episode is re-grounded here, so injected
-    fakes are verified the same way as the live path."""
+    fakes are verified the same way as the live path.
+
+    ``episodes`` is the Episode store seam (spec #33): when present, past
+    similar Episodes seed the objective ahead of the incident description
+    (structured lookup — no embeddings, no API calls); absent means
+    today's objective exactly."""
     if not evidence:
         return ""
     objective = objective_text(event, evidence, links)
+    if episodes is not None:
+        context = memory_context(episodes, event, evidence)
+        if context:
+            objective = context + "\n\n" + objective
     try:
         if search is None:
             search = default_search(evidence, links)

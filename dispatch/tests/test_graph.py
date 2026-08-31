@@ -11,6 +11,7 @@ import dispatch.kpi as kpi_mod
 from _helpers import (make_kpi_runner, make_log_runner, make_proposer,
                       make_triage_runner)
 from dispatch.graph import build_graph, run_approval, run_to_approval
+from dispatch.memory import Episode, EpisodeStore
 from dispatch.root_cause import Tree, make_execute
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -57,11 +58,12 @@ INVALID_SELECTION = {"action": "reboot_the_lab", "args": {},
 
 
 def _graph(ctx, runner=None, kpi_runner=None, triage_runner=None,
-           proposer=None):
+           proposer=None, episodes=None, search=None):
     return build_graph(ctx["state_path"], ctx["records_dir"],
                        ctx["sandbox_root"], runner=runner,
                        kpi_runner=kpi_runner, triage_runner=triage_runner,
-                       proposer=proposer or make_proposer(CANNED_PROPOSAL))
+                       proposer=proposer or make_proposer(CANNED_PROPOSAL),
+                       episodes=episodes, search=search)
 
 
 def _handle(ctx, event, stub):
@@ -448,3 +450,135 @@ def test_full_audit_trail_end_to_end(ctx, event, stub):
     assert "Proposal hash: `" in record
     assert "**approved (executed)**" in record
     assert "executed: docker compose" in record    # the full audit trail
+
+
+# --- Episodic memory: the Episode write at decision time (spec #33) ---
+
+def _episodes_path(ctx):
+    return ctx["state_path"].parent / "episodes.jsonl"
+
+
+def test_execute_writes_episode_on_dry_run_approve(ctx, event, stub):
+    episodes = EpisodeStore(_episodes_path(ctx))
+    run_to_approval(_graph(ctx, episodes=episodes), event, stub)
+    run_approval(_graph(ctx, episodes=episodes), event["incident_id"],
+                 "approve", execute=False)
+    stored = EpisodeStore(_episodes_path(ctx)).load()
+    assert len(stored) == 1
+    ep = stored[0]
+    assert ep.incident_id == event["incident_id"]
+    assert ep.procedure == "n4_upf_timeout"
+    assert ep.decision == "approved-dry-run"
+    assert ep.action == "restart_nf"
+    assert ep.justification == CANNED_PROPOSAL["justification"]
+    # The blanket-stubbed specialists produced no evidence and no root
+    # cause — the episode records the honest fallbacks.
+    assert ep.evidence_keys == [] and ep.causes == []
+    assert ep.narrative == ""
+
+
+def test_execute_writes_episode_on_reject(ctx, event, stub):
+    episodes = EpisodeStore(_episodes_path(ctx))
+    run_to_approval(_graph(ctx, episodes=episodes), event, stub)
+    run_approval(_graph(ctx, episodes=episodes), event["incident_id"],
+                 "reject")
+    stored = EpisodeStore(_episodes_path(ctx)).load()
+    assert len(stored) == 1
+    assert stored[0].decision == "rejected"
+
+
+def test_execute_writes_episode_with_evidence_keys_on_execute(ctx, event,
+                                                             stub):
+    windowed = (FIXTURES / "core_logs_n4_timeout.txt").read_text()
+    line = ("upf     | 2025-06-15T15:05:01.510724553Z [open5gs-upf] INFO "
+            "[upf] PFCP[0] Session Establishment Request "
+            "(../src/upf/pfcp-sm.c:225)")
+
+    def extract(text, event):
+        return [{"kind": "request unanswered",
+                 "entry": "UPF logs the request but never answers",
+                 "keys": {"nf": "upf"}, "citation": line}]
+
+    episodes = EpisodeStore(_episodes_path(ctx))
+    graph = build_graph(ctx["state_path"], ctx["records_dir"],
+                        ctx["sandbox_root"],
+                        log_runner=make_log_runner(windowed),
+                        extractor=extract, episodes=episodes,
+                        proposer=make_proposer(CANNED_PROPOSAL))
+    run_to_approval(graph, event, stub)
+    run_approval(build_graph(ctx["state_path"], ctx["records_dir"],
+                             ctx["sandbox_root"], episodes=episodes,
+                             proposer=make_proposer(CANNED_PROPOSAL)),
+                 event["incident_id"], "approve", execute=False)
+    stored = EpisodeStore(_episodes_path(ctx)).load()
+    assert len(stored) == 1
+    ep = stored[0]
+    assert ep.decision == "approved-dry-run"
+    # The correlated evidence keys become the episode's match keys.
+    assert [(key.key, key.value) for key in ep.evidence_keys] == \
+        [("nf", "upf")]
+
+
+def test_without_episodes_seam_nothing_is_written(ctx, event, stub):
+    run_to_approval(_graph(ctx), event, stub)
+    run_approval(_graph(ctx), event["incident_id"], "approve", execute=False)
+    assert not _episodes_path(ctx).exists()
+
+
+# --- Episodic memory: the investigate node seeds the objective ---
+
+UPF_LOG_LINE = ("upf     | 2025-06-15T15:05:01.510724553Z [open5gs-upf] INFO "
+                "[upf] PFCP[0] Session Establishment Request "
+                "(../src/upf/pfcp-sm.c:225)")
+
+
+def _log_extractor(text, event):
+    return [{"kind": "request unanswered",
+             "entry": "UPF logs the request but never answers",
+             "keys": {"nf": "upf"}, "citation": UPF_LOG_LINE}]
+
+
+def _seeded_graph(ctx, episodes, search):
+    windowed = (FIXTURES / "core_logs_n4_timeout.txt").read_text()
+    return build_graph(ctx["state_path"], ctx["records_dir"],
+                       ctx["sandbox_root"],
+                       log_runner=make_log_runner(windowed),
+                       extractor=_log_extractor,
+                       episodes=episodes, search=search,
+                       proposer=make_proposer(CANNED_PROPOSAL))
+
+
+def test_investigate_seeds_objective_with_past_episodes(ctx, event, stub):
+    episodes = EpisodeStore(_episodes_path(ctx))
+    episodes.add(Episode(incident_id="inc-past",
+                         procedure="n4_upf_timeout",
+                         evidence_keys=[{"key": "nf", "value": "upf"}],
+                         narrative="the UPF was stuck this way before",
+                         action="restart_nf",
+                         decision="approved-executed"))
+    objectives = []
+
+    def search(objective):
+        objectives.append(objective)
+        return {"narrative": "the UPF never answered",
+                "cited_evidence": [{"citation": UPF_LOG_LINE}]}
+
+    run_to_approval(_seeded_graph(ctx, episodes, search), event, stub)
+    objective = objectives[0]
+    assert "Past similar incidents retrieved from episodic memory" in objective
+    assert "the UPF was stuck this way before" in objective
+    assert "Explain the failure incident" in objective  # still the core task
+    record = (ctx["records_dir"] / f'{event["incident_id"]}.md').read_text()
+    assert "the UPF never answered" in record
+
+
+def test_investigate_objective_untouched_without_episodes(ctx, event, stub):
+    objectives = []
+
+    def search(objective):
+        objectives.append(objective)
+        return {"narrative": "the UPF never answered",
+                "cited_evidence": [{"citation": UPF_LOG_LINE}]}
+
+    run_to_approval(_seeded_graph(ctx, None, search), event, stub)
+    assert "Past similar incidents" not in objectives[0]

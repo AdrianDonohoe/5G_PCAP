@@ -30,6 +30,7 @@ from .evidence import AlarmEvent, EvidenceItem
 from .executor import Executor, OBSERVE_ONLY_NOTE, proposal_hash
 from .kpi import run_kpi_agent
 from .log import run_log_agent
+from .memory import Episode, EvidenceKey
 from .pcap import run_pcap_agent
 from .proposal import run_proposal
 from .record import render_record
@@ -86,6 +87,30 @@ def _write_record(state: State, approval: str, log_lines: list[str]) -> None:
     }))
 
 
+def _write_episode(state: State, decision: str, episodes) -> None:
+    """The Episode write at decision time (spec #33): every decided
+    incident is remembered, whatever the decision — the diagnosis stands
+    even when the proposal was refused. The Outcome is appended later,
+    at close. With no store injected, the memory path does nothing."""
+    if episodes is None:
+        return
+    proposal = state["proposal"] or {}
+    episodes.add(Episode(
+        incident_id=state["event"]["incident_id"],
+        procedure=state["event"].get("procedure"),
+        scenario=state["event"].get("scenario"),
+        evidence_keys=[EvidenceKey(key=key, value=value)
+                       for item in state["evidence"]
+                       for key, value in (item.get("keys") or {}).items()],
+        causes=[item["cause"] for item in state["evidence"]
+                if item.get("cause")],
+        action=proposal.get("action"),
+        narrative=state["root_cause"],
+        justification=proposal.get("justification"),
+        decision=decision,
+    ))
+
+
 def _read_record_hash(path: str) -> str:
     match = _HASH_RE.search(Path(path).read_text())
     if not match:
@@ -95,7 +120,7 @@ def _read_record_hash(path: str) -> str:
 
 def build_graph(state_path, records_dir, sandbox_root, runner=None,
                 kpi_runner=None, triage_runner=None, log_runner=None,
-                extractor=None, search=None, proposer=None):
+                extractor=None, search=None, proposer=None, episodes=None):
     """Compile the Incident Manager graph with a sqlite checkpointer. The
     checkpointer's connection lives as long as the compiled graph.
     ``kpi_runner`` stubs the 5gcap subprocess in tests; ``triage_runner``
@@ -103,9 +128,13 @@ def build_graph(state_path, records_dir, sandbox_root, runner=None,
     compose logs subprocess and ``extractor`` the log extraction;
     ``search`` stubs the root-cause search (tests inject a canned search
     or a Tree with stub expand/evaluate — the spec's stub-injected Tree
-    pattern); ``proposer`` stubs the proposal selection. Every live
-    default stays behind its seam (ADR-0002: pytest never builds the
-    Groq predictor)."""
+    pattern); ``proposer`` stubs the proposal selection. ``episodes`` is
+    the Episode store seam (spec #33): the investigate node seeds the
+    objective from it and the execute node writes the decided Episode to
+    it; absent, the memory path does nothing and behavior is exactly as
+    before. Every live default stays behind its seam (ADR-0002: pytest
+    never builds the Groq predictor); the store itself is pure file I/O,
+    so tests inject tmp-backed stores rather than stubs."""
     records_dir = Path(records_dir)
     records_dir.mkdir(parents=True, exist_ok=True)
     Path(state_path).parent.mkdir(parents=True, exist_ok=True)
@@ -147,7 +176,8 @@ def build_graph(state_path, records_dir, sandbox_root, runner=None,
 
     def investigate(state: State) -> State:
         state["root_cause"] = run_root_cause(
-            state["event"], state["evidence"], state["links"], search=search)
+            state["event"], state["evidence"], state["links"], search=search,
+            episodes=episodes)
         return state
 
     def propose(state: State) -> State:
@@ -184,6 +214,7 @@ def build_graph(state_path, records_dir, sandbox_root, runner=None,
         if state["decision"] == "reject":
             _write_record(state, "rejected",
                           ["rejected: no commands applied"])
+            _write_episode(state, "rejected", episodes)
             return state
         commands = [c for c in proposal["commands"]
                     if c != OBSERVE_ONLY_NOTE]
@@ -195,6 +226,9 @@ def build_graph(state_path, records_dir, sandbox_root, runner=None,
             _write_record(state, "approved-executed", log)
         else:
             _write_record(state, "approved-dry-run", log)
+        _write_episode(state,
+                       "approved-executed" if state["execute"]
+                       else "approved-dry-run", episodes)
         return state
 
     graph = StateGraph(State)

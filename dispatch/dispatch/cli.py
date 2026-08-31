@@ -15,6 +15,7 @@ from pathlib import Path
 from .evidence import AlarmEvent
 from .graph import build_graph, run_approval, run_to_approval
 from .kpi import detect_kpi
+from .memory import EpisodeStore
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 STATE_PATH = REPO_ROOT / "dispatch" / "state" / "checkpoints.sqlite"
@@ -23,7 +24,11 @@ SANDBOX_ROOT = REPO_ROOT / "sandbox"
 
 
 def _graph():
-    return build_graph(STATE_PATH, RECORDS_DIR, SANDBOX_ROOT)
+    # The Episode store lives beside the checkpointer, so both resume
+    # artifacts follow the same state dir (and the same test patch).
+    episodes = EpisodeStore(STATE_PATH.parent / "episodes.jsonl")
+    return build_graph(STATE_PATH, RECORDS_DIR, SANDBOX_ROOT,
+                       episodes=episodes)
 
 
 def main(argv: list[str] | None = None) -> int:

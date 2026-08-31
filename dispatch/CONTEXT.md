@@ -100,3 +100,31 @@ The deterministic runner that applies an approved proposal's commands —
 vocabulary-only, sandbox paths/containers only, dry-run by default,
 commands appended to the Incident Record.
 _Avoid_: deployer, runner
+
+**Outcome**:
+The operator's verified verdict on an executed remediation — `resolved`
+or `unresolved` — recorded when the incident is closed. The only
+post-execution truth the system may learn from.
+_Avoid_: result, status, feedback
+
+**Episode**:
+A decided incident: its signature (procedure, scenario, evidence keys),
+decision, executed action, and — once the operator closes it — its
+Outcome. The unit of dispatch's episodic memory, consulted by later
+investigations of the same signature.
+_Avoid_: log entry, case history, ticket
+
+**Runbook**:
+A documented, reusable remediation for a failure signature: structured
+symptoms and ordered steps that resolve to exactly one action from the
+vocabulary. The unit of procedural memory. Seeded by operators, and
+only ever changed through the Learning loop — a Runbook is proposed by
+the system, never self-applied.
+_Avoid_: playbook, SOP, recipe
+
+**Learning loop**:
+The CoALA feedback path: a resolved Episode drafts a Runbook proposal
+for an operator to review and promote. Human-gated throughout —
+nothing the loop learns takes effect without a human moving it into
+place.
+_Avoid_: auto-learning, self-improvement

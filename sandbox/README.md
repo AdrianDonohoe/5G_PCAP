@@ -51,7 +51,9 @@ back with a `[PARTIAL]` flow (rare capture-start race).
 `./capture.sh --scenario <name>` applies a failure to UE1 only (UE2/UE3 stay
 golden in the same capture) and writes `<name>.pcap`, `<name>_n4.pcap`, and
 `<name>_sbi.pcap` plus a sibling `<name>.label.json` ground-truth label for
-the triage eval harness:
+the triage eval harness (`pdu_session_rsp_timeout` is the exception: its N2
+dump is `<name>_n2.pcap`, the golden-style triple the eval harness's merged
+invocation expects):
 
 | scenario | injection | expected wire shape |
 |---|---|---|
@@ -61,6 +63,7 @@ the triage eval harness:
 | `pdu_session_reject_slice` | UE1 second session on SST 2 | SST 1 session accepts; 5GMM STATUS #91 on SST 2 |
 | `pdu_session_reject_other` | UE1 APN `otherdnn` (UDM-only DNN) | 5GSM REJECT, cause #67 |
 | `pdu_session_timeout` | blackhole SMF SBI port (in-netns iptables) | sm-context create hangs ~11 s, then 5GMM #90, UE retries |
+| `pdu_session_rsp_timeout` | blackhole SMF SBI *responses* (in-netns iptables, egress) | same #90 echo, but the create is visible and unanswered on SBI: its timeout procedure joins the flow |
 | `sbi_udm_timeout` | blackhole UDM SBI port (in-netns iptables) | ≥1 unanswered Nudm_* request (AUSF→UDM auth hangs); N2 registration fails after the AMF's SBI deadline |
 | `sbi_nssf_reject` | SMF profile deleted from NRF + SMF paused + NSI retargeted to SST 2 in NSSF config | Nnssf_NSSelection 403, then 5GMM STATUS #147 to the UE |
 | `n4_upf_timeout` | blackhole UPF PFCP port (udp/8805, in-netns iptables) | 3 unanswered Session Establishment Requests per UE attempt (2.5 s apart), then 5GSM REJECT #38 at ~7.5 s |
@@ -75,6 +78,16 @@ the AMF); pausing the SMF container does not produce a hang at all (the NRF
 purges a heartbeat-less NF within ~10 s and the AMF answers instantly), which
 is why the scenario blackholes the SMF's SBI port from inside its own netns
 instead — heartbeats keep flowing, data-path requests time out. The
+`pdu_session_rsp_timeout` scenario is that scenario's egress twin: it drops
+the SMF's SBI *responses* (`OUTPUT --sport 7777`) instead of its input, so
+each sm-context create reaches the SMF and is answered, but the answer
+never leaves. The N2 shape is the same #90 echo, but the SBI plane now
+carries the parseable, SUPI-carrying create left unanswered — its timeout
+procedure joins the flow in the merged decode, the joined-incident fixture
+the triage eval's live accuracy run searches (the input-drop twin kills the
+request before it is a message, leaving the SBI plane empty). The SMF still
+reaches the UPF, so N4 establishment completes (an accept, no incident).
+The
 `sbi_nssf_reject` injection is compound for the same reason: deleting the SMF
 NF profile alone fails (its heartbeats re-register it), so the SMF is paused
 too, and the NSSF's only NSI is retargeted to SST 2 (the NSSF refuses to boot

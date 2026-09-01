@@ -42,6 +42,7 @@ TOOLS = ("inspect", "topology", "spec", "memory", "finalize")
 INCIDENT_TYPES = ["auth_failure", "registration_reject",
                   "registration_timeout", "pdu_session_reject_slice",
                   "pdu_session_reject_other", "pdu_session_timeout",
+                  "pdu_session_rsp_timeout",
                   "sbi_udm_timeout", "sbi_nssf_reject",
                   "n4_upf_timeout"]
 
@@ -478,7 +479,8 @@ class ExpandSignature(dspy.Signature):
 
     {"incident_type": "<one of auth_failure, registration_reject,
     registration_timeout, pdu_session_reject_slice,
-    pdu_session_reject_other, pdu_session_timeout, sbi_udm_timeout,
+    pdu_session_reject_other, pdu_session_timeout,
+    pdu_session_rsp_timeout, sbi_udm_timeout,
     sbi_nssf_reject, n4_upf_timeout>",
     "narrative": "<one-sentence root-cause explanation>",
     "cited_evidence": [{"message": "<decoded message name>",
@@ -504,7 +506,12 @@ class ExpandSignature(dspy.Signature):
     which the accept records contradict; pdu_session_reject_other for
     any other PDU Session REJECT (e.g. cause 67); pdu_session_timeout when NO reject
     exists but cause 90 "Payload was not forwarded" echoes on the UE's
-    repeated request with multi-second gaps. On the SBI plane: a request
+    repeated request with multi-second gaps;
+    pdu_session_rsp_timeout is pdu_session_timeout's egress twin: the N2
+    shape is the same cause 90 echo, but the SBI plane shows the
+    sm-contexts create unanswered (a timeout procedure joined to the
+    flow) where pdu_session_timeout's create never reaches the SMF and
+    leaves no SBI message at all — cite the unanswered create. On the SBI plane: a request
     answered with HTTP status >= 400 is an explicit reject (cite the
     service name and ts; the status belongs in the narrative, cause is
     null) — sbi_nssf_reject when the Nnssf_NSSelection consult is

@@ -7,8 +7,8 @@ accuracy targets — the pytest suite exercises it instead.
 
 ADR-0002: lives in evals/, run explicitly (`uv run python evals/run_eval.py`
 from triage/) — every fixture run costs real Groq calls, so this never runs
-inside the pytest suite. Targets: type_accuracy >= (n-1)/n (8/9 with all
-nine fixtures enabled) and diagnosis_quality mean >= 0.7 (mean over runs;
+inside the pytest suite. Targets: type_accuracy >= (n-1)/n (9/10 with all
+ten fixtures enabled) and diagnosis_quality mean >= 0.7 (mean over runs;
 a run whose search completes no Hypothesis scores 0.0).
 
 Pipeline per fixture run: decode with 5gcap's CLI (subprocess; shared
@@ -54,10 +54,12 @@ FIXTURES = ["auth_failure", "registration_reject", "registration_timeout",
 SBI_FIXTURES = ["sbi_udm_timeout", "sbi_nssf_reject"]
 # the N4-plane scenario: enabled only once its sandbox pcap exists
 N4_FIXTURES = ["n4_upf_timeout"]
-# the golden sandbox triple, decoded by ONE merged three-plane invocation
-# (the golden captures hold no failures, so it never joins the live
-# accuracy run; decode_fixture serves it and the pytest suite proves it)
-MERGED_FIXTURES = ["sandbox"]
+# fixtures decoded by ONE merged three-plane invocation. The golden sandbox
+# holds no failures and no label, so it never joins the live accuracy run
+# (decode_fixture serves it and the pytest suite proves it); the #14
+# scenario carries a label and joins (its joined SBI failure earns real
+# accuracy numbers, the issue's point).
+MERGED_FIXTURES = ["sandbox", "pdu_session_rsp_timeout"]
 
 ROOT = Path(__file__).resolve().parent.parent      # triage/
 FIVEGCAP = ROOT.parent / "5gcap"
@@ -65,9 +67,20 @@ FIXTURE_DIR = FIVEGCAP / "tests" / "fixtures"
 
 
 def _enabled_fixtures() -> list[str]:
-    """FIXTURES plus the sbi_*/n4_* scenarios whose pcaps were captured."""
-    return FIXTURES + [name for name in SBI_FIXTURES + N4_FIXTURES
-                       if (FIXTURE_DIR / f"{name}.pcap").exists()]
+    """FIXTURES plus the sbi_*/n4_* scenarios whose pcaps were captured,
+    plus the merged scenarios whose label exists (a label marks a fixture
+    as a live-accuracy-run member; the golden sandbox has none)."""
+    return (FIXTURES
+            + [name for name in SBI_FIXTURES + N4_FIXTURES
+               if (FIXTURE_DIR / f"{name}.pcap").exists()]
+            + [name for name in MERGED_FIXTURES
+               if (FIXTURE_DIR / f"{name}.label.json").exists()])
+
+
+def _known_fixtures() -> list[str]:
+    """Every fixture name the harness accepts (--fixtures validation and
+    the per-fixture report share this)."""
+    return FIXTURES + SBI_FIXTURES + N4_FIXTURES + MERGED_FIXTURES
 
 # Same Groq vendor-prefix gotcha as triage.search.GROQ: dspy strips the
 # first segment as provider, so the doubled "openai/" keeps Groq's
@@ -419,7 +432,7 @@ def report(results: list[dict]) -> dict:
             f"{dim}={v:.2f}" for dim, v in summary["dimension_means"].items()),
         "per fixture:",
     ]
-    for name in FIXTURES + SBI_FIXTURES + N4_FIXTURES:
+    for name in _known_fixtures():
         if name in fixture_ta:
             lines.append(f"  {name:24s} type_accuracy={fixture_ta[name]:.3f} "
                          f" diagnosis_quality={diag_by_fixture[name]:.3f}")
@@ -443,8 +456,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     names = ([n.strip() for n in args.fixtures.split(",") if n.strip()]
              if args.fixtures else _enabled_fixtures())
-    unknown = [n for n in names
-               if n not in FIXTURES + SBI_FIXTURES + N4_FIXTURES]
+    unknown = [n for n in names if n not in _known_fixtures()]
     if unknown:
         print(f"evals: error: unknown fixture(s): {', '.join(unknown)}",
               file=sys.stderr)

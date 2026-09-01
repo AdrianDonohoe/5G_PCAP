@@ -1,4 +1,4 @@
-"""The dispatch eval harness: the nine sandbox failure-injection
+"""The dispatch eval harness: the ten sandbox failure-injection
 scenarios run as Alarm events through the real pipeline against the live
 lab, and a judge model distinct from the generator scores each Incident
 Record's quality.
@@ -43,6 +43,11 @@ from dispatch.kpi import run_analyze
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = REPO_ROOT / "5gcap" / "tests" / "fixtures"
 SANDBOX = REPO_ROOT / "sandbox"
+
+# capture.sh's merged-eval naming exception: these scenarios write their
+# N2 dump under the golden-style _n2 name — no unsuffixed pcap exists
+# for the harness to read.
+MERGED_SCENARIOS = ("pdu_session_rsp_timeout",)
 
 DIMS = ("accuracy", "specificity", "evidence", "causality", "proposal")
 
@@ -190,7 +195,9 @@ def capture_scenario(name: str) -> dict:
         suffix = f": {detail}" if detail else ""
         raise RuntimeError(f"capture.sh {name} failed "
                            f"(exit {result.returncode}){suffix}")
-    captures = {"n2": str(FIXTURES / f"{name}.pcap"),
+    n2_name = (f"{name}_n2.pcap" if name in MERGED_SCENARIOS
+               else f"{name}.pcap")
+    captures = {"n2": str(FIXTURES / n2_name),
                 "sbi": str(FIXTURES / f"{name}_sbi.pcap"),
                 "n4": str(FIXTURES / f"{name}_n4.pcap")}
     label_path = FIXTURES / f"{name}.label.json"
@@ -357,12 +364,12 @@ def load_results(out) -> dict:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        description="Dispatch eval harness: the nine sandbox "
+        description="Dispatch eval harness: the ten sandbox "
                     "failure-injection scenarios as Alarm events through "
                     "the real pipeline against the live lab, each record "
                     "judged by a model distinct from the generator.")
     parser.add_argument("--scenarios", nargs="*", default=None,
-                        help="scenarios to run (default: all nine)")
+                        help="scenarios to run (default: all ten)")
     parser.add_argument("--runs", type=int, default=3,
                         help="pipeline runs per scenario (default: 3)")
     parser.add_argument("--out", type=Path,

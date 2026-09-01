@@ -12,7 +12,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from evals.run_eval import decode_fixture, run_fixture
+from evals.run_eval import (_enabled_fixtures, _known_fixtures,
+                             decode_fixture, label_for, run_fixture)
 from triage.memory import Episode
 
 
@@ -164,3 +165,28 @@ def test_decode_fixture_merged_invocation(tmp_path):
                               for p in data["sbi"]["procedures"]}
                   if f is not None) == [1, 2, 3]
     assert data["kpis"]["sbi_to_n4_ms"] is not None
+
+
+def test_decode_fixture_merged_failure_fixture(tmp_path):
+    # issue #14: the joined-failure fixture decodes through the merged
+    # invocation and its export carries the joined SBI failure the live run
+    # searches (AC2: a non-None flow_id on an SBI failure)
+    paths = decode_fixture("pdu_session_rsp_timeout", tmp_path)
+    assert set(paths) == {"n2"}
+    data = json.loads(Path(paths["n2"]).read_text())
+    assert data["flows"][0]["sbi_refs"]
+    assert any(p.get("outcome") == "timeout" and p.get("flow_id") == 1
+               for p in data["sbi"]["procedures"])
+
+
+def test_enabled_fixtures_includes_merged_label():
+    # the merged fixture joins the live accuracy run once its label exists
+    # (ground truth present); the golden sandbox carries no label and stays
+    # out of the live run
+    assert "pdu_session_rsp_timeout" in _enabled_fixtures()
+    assert "sandbox" not in _enabled_fixtures()
+
+
+def test_merged_fixture_label_and_known_check():
+    assert label_for("pdu_session_rsp_timeout") == "pdu_session_rsp_timeout"
+    assert "pdu_session_rsp_timeout" in _known_fixtures()

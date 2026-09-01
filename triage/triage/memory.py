@@ -28,6 +28,7 @@ INCIDENT_TYPES = Literal[
     "pdu_session_reject_slice",
     "pdu_session_reject_other",
     "pdu_session_timeout",
+    "pdu_session_rsp_timeout",
     "sbi_udm_timeout",
     "sbi_nssf_reject",
     "n4_upf_timeout",

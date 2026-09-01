@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from fivegcap.capture import read_capture, read_pfcp_capture
+from fivegcap.cli import analyze
 from fivegcap.flow import build_flows
 from fivegcap.ngap import decode as ngap_decode
 from fivegcap.pfcp import decode as pfcp_decode
@@ -309,3 +310,63 @@ def test_n4_upf_timeout():
         "the first reject must arrive after the SMF's N4 give-up, not instantly"
     assert sum(1 for d in delayed if d > 5.0) >= 3, \
         "several attempts must show the ~7.5 s give-up before the SMF degrades"
+
+
+# Merged-eval scenario (issue #14): the first fixture whose three planes
+# are committed for ONE merged decode -- the eval harness's invocation --
+# producing a joined SBI failure (AC2: >=1 SBI or N4 Incident with a
+# non-None flow_id).
+
+@pytest.mark.skipif(
+    not (FIXTURES / "pdu_session_rsp_timeout_n2.pcap").exists(),
+    reason="merged pcaps arrive with the sandbox run (sandbox/capture.sh)")
+def test_pdu_session_rsp_timeout(tmp_path):
+    label = json.loads(
+        (FIXTURES / "pdu_session_rsp_timeout.label.json").read_text())
+    assert label == {"incident_type": "pdu_session_rsp_timeout",
+                     "scenario": "pdu_session_rsp_timeout"}
+    merged = tmp_path / "pdu_session_rsp_timeout_merged.json"
+    assert analyze(str(FIXTURES / "pdu_session_rsp_timeout_n2.pcap"),
+                   str(merged),
+                   sbi_path=str(FIXTURES / "pdu_session_rsp_timeout_sbi.pcap"),
+                   n4_path=str(FIXTURES / "pdu_session_rsp_timeout_n4.pcap")) == 0
+    data = json.loads(merged.read_text())
+    # AC2: the merged decode carries an SBI failure joined to the flow. The
+    # blackholed SMF *responses* leave every sm-context create unanswered
+    # (the input-drop twin would kill the request before it is a message),
+    # so the create's timeout procedure joins flow 1 via its body imsi-.
+    sbi = data["sbi"]
+    joined = [p for p in sbi["procedures"]
+              if p.get("outcome") in ("reject", "timeout")
+              and p.get("flow_id") is not None]
+    assert joined, "the merged decode must carry a joined SBI failure"
+    assert any(p["kind"] == "Nsmf_PDUSession" and p["outcome"] == "timeout"
+               and p["flow_id"] == 1 for p in joined), \
+        "the joined failure must be the unanswered sm-contexts create"
+    flows = data["flows"]
+    assert len(flows) == 1  # gnb+ue1 only
+    f = flows[0]
+    assert f["sbi_refs"], "the create must appear among the flow's SBI refs"
+    assert [p["kind"] for p in f["procedures"]] == ["registration"], \
+        "the PDU session must never complete"
+    assert f["procedures"][0]["outcome"] == "accept"
+    # N2: the AMF's ~11s SBI deadline bounces each PDU session request back
+    # as 5GMM #90 (pdu_session_timeout's signature, the egress twin).
+    req_ts = [m["ts"] for m in f["messages"]
+              if m.get("nas_inner") == "5GSMPDUSessionEstabRequest"]
+    bounce_ts = [m["ts"] for m in f["messages"]
+                 if (m.get("nas_cause") or {}).get("code") == 90]
+    assert req_ts and bounce_ts, "the bounce must carry 5GMM cause #90"
+    assert min(bounce_ts) - min(req_ts) > 5.0, \
+        "the #90 must arrive after the SBI deadline, not instantly"
+    # N4: the SMF still reaches the UPF, so establishment completes under
+    # the blackholed responses -- accepts, no session incident (the N2
+    # SetupRequest never reaches the gNB, so the leg does not join).
+    n4 = data["n4"]
+    est = [p for p in n4["procedures"]
+           if p["kind"] == "session_establishment"]
+    assert est and all(p["outcome"] == "accept" for p in est), \
+        "the UPF must answer the establishment (only the SBI leg is down)"
+    assert not [p for p in n4["procedures"]
+                if p["kind"].startswith("session_")
+                and p["outcome"] in ("reject", "timeout")]

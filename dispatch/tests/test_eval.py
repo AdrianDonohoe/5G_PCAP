@@ -84,10 +84,10 @@ def make_judge(calls):
 
 
 def test_scenarios_are_the_executor_vocabulary():
-    # The harness runs the executor's nine failure-injection scenarios —
+    # The harness runs the executor's ten failure-injection scenarios —
     # one list, so the harness can never drift from the sandbox.
     assert SCENARIOS == executor_mod.SCENARIOS
-    assert len(SCENARIOS) == 9
+    assert len(SCENARIOS) == 10
 
 
 def test_judge_model_is_distinct_from_the_generator():
@@ -266,6 +266,29 @@ def test_run_scenario_capture_failure_records_error(tmp_path):
     assert entry["error"] == "lab down"
     assert entry["event"] is None
     assert entry["runs"] == []
+
+
+def test_capture_scenario_merged_name_reads_the_n2_triple(tmp_path,
+                                                          monkeypatch):
+    # capture.sh's merged-eval exception writes the N2 dump under the
+    # golden-style _n2 name — no unsuffixed pcap exists for the harness
+    # to read.
+    import evals.run_eval as eval_mod
+
+    fixtures = tmp_path / "fixtures"
+    fixtures.mkdir()
+    (fixtures / "pdu_session_rsp_timeout.label.json").write_text(
+        '{"incident_type": "pdu_session_rsp_timeout", '
+        '"scenario": "pdu_session_rsp_timeout"}')
+    for suffix in ("_n2.pcap", "_sbi.pcap", "_n4.pcap"):
+        (fixtures / f"pdu_session_rsp_timeout{suffix}").write_bytes(b"")
+    ok = type("Result", (), {"returncode": 0, "stderr": "", "stdout": ""})()
+    monkeypatch.setattr(eval_mod, "FIXTURES", fixtures)
+    monkeypatch.setattr(eval_mod.subprocess, "run", lambda *a, **k: ok)
+
+    captures = eval_mod.capture_scenario("pdu_session_rsp_timeout")
+    assert captures["n2"].endswith("pdu_session_rsp_timeout_n2.pcap")
+    assert captures["label"]["incident_type"] == "pdu_session_rsp_timeout"
 
 
 def test_run_scenario_pipeline_failure_records_run_error(tmp_path):

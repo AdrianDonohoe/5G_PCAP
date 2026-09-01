@@ -1,6 +1,6 @@
 # dispatch eval harness
 
-The live eval for the dispatch pipeline: the nine sandbox
+The live eval for the dispatch pipeline: the ten sandbox
 failure-injection scenarios run as Alarm events through the real pipeline
 against the live lab, and an LLM judge distinct from the generator scores
 each Incident Record's quality. This is the only runner that touches Groq
@@ -24,7 +24,7 @@ the judge all raise without it).
 From the dispatch directory:
 
 ```
-uv run python evals/run_eval.py                 # all nine, 3 runs each
+uv run python evals/run_eval.py                 # all ten, 3 runs each
 uv run python evals/run_eval.py --scenarios n4_upf_timeout auth_failure
 uv run python evals/run_eval.py --runs 1
 uv run python evals/run_eval.py --resume        # resume from results.json

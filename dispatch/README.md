@@ -108,15 +108,15 @@ refused. A record that honestly produced no proposal cannot be approved
 | `restart_nf` | `{"nf": "<core service>"}` | restarts one sandbox core NF |
 | `revert_config` | `{"path": "<config file under the sandbox>"}` | reverts a config file |
 | `reseed_subscriber` | `{"imsi": "<14–15 digit IMSI>"}` | re-provisions a subscriber |
-| `rerun_capture` | `{"scenario": "<one of the nine>"}` | re-runs a failure-injection capture |
+| `rerun_capture` | `{"scenario": "<one of the ten>"}` | re-runs a failure-injection capture |
 | `observe_only` | `{}` | records the incident, applies nothing |
 
-The nine `rerun_capture` scenarios (see
+The ten `rerun_capture` scenarios (see
 [`../sandbox/README.md`](../sandbox/README.md)): `auth_failure`,
 `registration_reject`, `registration_timeout`,
 `pdu_session_reject_slice`, `pdu_session_reject_other`,
-`pdu_session_timeout`, `sbi_udm_timeout`, `sbi_nssf_reject`,
-`n4_upf_timeout`.
+`pdu_session_timeout`, `pdu_session_rsp_timeout`, `sbi_udm_timeout`,
+`sbi_nssf_reject`, `n4_upf_timeout`.
 
 ### 4. `close` — the Outcome and the learning loop
 
@@ -166,7 +166,7 @@ it — do not "fix" the typography.
 
 ## Eval harness
 
-[`evals/README.md`](./evals/README.md) runs all nine failure-injection
+[`evals/README.md`](./evals/README.md) runs all ten failure-injection
 scenarios through this exact workflow against the live lab and scores
 each pending record with a judge model distinct from the generator.
 

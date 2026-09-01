@@ -47,13 +47,17 @@ _Avoid_: diagnosis, answer, result
 
 **incident_type**:
 The canonical category a Hypothesis is classified into — a closed set of
-nine, one per (Procedure × failure shape) combination: `auth_failure`,
+ten, one per (Procedure × failure shape) combination: `auth_failure`,
 `registration_reject`, `registration_timeout`, `pdu_session_reject_slice`,
-`pdu_session_reject_other`, `pdu_session_timeout`, `sbi_udm_timeout`,
+`pdu_session_reject_other`, `pdu_session_timeout`,
+`pdu_session_rsp_timeout`, `sbi_udm_timeout`,
 `sbi_nssf_reject`, `n4_upf_timeout`. Maps one-to-one onto the
 sandbox's failure-injection scenario labels, which supply ground truth for
 `type_accuracy`. New categories are added only when a real failure shape
-doesn't fit any of these nine, not speculatively.
+doesn't fit any of these, not speculatively: `pdu_session_rsp_timeout`
+earned its slot because the merged decode exposes the unanswered
+sm-contexts create (SBI timeout joined to the flow), a shape
+`pdu_session_timeout`'s invisible create cannot express.
 _Avoid_: category, label, class
 
 **Action**:

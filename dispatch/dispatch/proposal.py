@@ -48,8 +48,8 @@ class ProposalSignature(dspy.Signature):
     - rerun_capture: {"scenario": "<one of auth_failure,
       registration_reject, registration_timeout,
       pdu_session_reject_slice, pdu_session_reject_other,
-      pdu_session_timeout, sbi_udm_timeout, sbi_nssf_reject,
-      n4_upf_timeout>"}
+      pdu_session_timeout, pdu_session_rsp_timeout, sbi_udm_timeout,
+      sbi_nssf_reject, n4_upf_timeout>"}
     - observe_only: {}
 
     An action outside the vocabulary produces no proposal at all. Never

@@ -18,7 +18,7 @@
 # harness. A scenario is a UE1-config override plus optional UDM seed
 # variant (pre-hook) and optional docker pause (timeout shapes), or a
 # core-side injection (the sbi_* pair and n4_upf_timeout), and maps
-# one-to-one onto the nine incident_types in ../triage/CONTEXT.md:
+# one-to-one onto the ten incident_types in ../triage/CONTEXT.md:
 #
 #   auth_failure              wrong Ki on UE1      -> SYNCH FAILURE #21, then
 #                                                    REGISTRATION REJECT #111
@@ -31,6 +31,9 @@
 #                             (DNN seeded in UDM only, absent from SMF)
 #   pdu_session_timeout       blackhole SMF SBI    -> sm-context creates hang
 #                                                    ~11s then 5GMM #90
+#   pdu_session_rsp_timeout   blackhole SMF SBI    -> creates answered but the
+#                             responses (egress)   response dropped: 5GMM #90,
+#                                                   SBI create timeout joins flow
 #   sbi_udm_timeout           blackhole UDM SBI    -> Nudm_* requests left
 #                                                    unanswered (SBI timeout)
 #   sbi_nssf_reject           SMF profile dropped  -> Nnssf_NSSelection 403,
@@ -60,11 +63,11 @@ SCENARIO=""
 if [[ $# -eq 2 && "$1" == "--scenario" ]]; then
   SCENARIO="$2"
 elif [[ $# -gt 0 ]]; then
-  echo "Usage: $0 [--scenario auth_failure|registration_reject|registration_timeout|pdu_session_reject_slice|pdu_session_reject_other|pdu_session_timeout|sbi_udm_timeout|sbi_nssf_reject|n4_upf_timeout]" >&2
+  echo "Usage: $0 [--scenario auth_failure|registration_reject|registration_timeout|pdu_session_reject_slice|pdu_session_reject_other|pdu_session_timeout|pdu_session_rsp_timeout|sbi_udm_timeout|sbi_nssf_reject|n4_upf_timeout]" >&2
   exit 2
 fi
 case "$SCENARIO" in
-  ""|auth_failure|registration_reject|registration_timeout|pdu_session_reject_slice|pdu_session_reject_other|pdu_session_timeout|sbi_udm_timeout|sbi_nssf_reject|n4_upf_timeout) ;;
+  ""|auth_failure|registration_reject|registration_timeout|pdu_session_reject_slice|pdu_session_reject_other|pdu_session_timeout|pdu_session_rsp_timeout|sbi_udm_timeout|sbi_nssf_reject|n4_upf_timeout) ;;
   *)
     echo "Error: unknown scenario '$SCENARIO'" >&2
     exit 2 ;;
@@ -78,6 +81,7 @@ DB_URI="mongodb://$(grep ^MONGO_IP= "$CORE_DIR/.env" | cut -d= -f2)/open5gs"
 PAUSED=""
 UDM_SEEDED=""
 SMF_BLACKHOLED=""
+SMF_EGRESS_BLACKHOLED=""
 SMF_PAUSED=""
 UDM_BLACKHOLED=""
 UPF_BLACKHOLED=""
@@ -92,6 +96,10 @@ cleanup() {
   [[ -n "$PAUSED" ]] && docker unpause "$PAUSED" 2>/dev/null
   if [[ -n "$SMF_BLACKHOLED" ]]; then
     docker exec sandbox_smf iptables -D INPUT -p tcp --dport 7777 -j DROP \
+      2>/dev/null
+  fi
+  if [[ -n "$SMF_EGRESS_BLACKHOLED" ]]; then
+    docker exec sandbox_smf iptables -D OUTPUT -p tcp --sport 7777 -j DROP \
       2>/dev/null
   fi
   if [[ -n "$UDM_BLACKHOLED" ]]; then
@@ -246,7 +254,13 @@ PY
 }
 
 if [[ -n "$SCENARIO" ]]; then
-  N2_OUT="$FIXTURES_DIR/$SCENARIO.pcap"
+  if [[ "$SCENARIO" == "pdu_session_rsp_timeout" ]]; then
+    # Merged-eval fixture: the eval harness's merged invocation expects the
+    # golden-style _n2/_n4/_sbi triple (triage/evals/run_eval.py).
+    N2_OUT="$FIXTURES_DIR/${SCENARIO}_n2.pcap"
+  else
+    N2_OUT="$FIXTURES_DIR/$SCENARIO.pcap"
+  fi
   N4_OUT="$FIXTURES_DIR/${SCENARIO}_n4.pcap"
   SBI_OUT="$FIXTURES_DIR/${SCENARIO}_sbi.pcap"
 else
@@ -310,6 +324,25 @@ elif [[ "$SCENARIO" == "pdu_session_timeout" ]]; then
   (cd "$RAN_DIR" && docker compose up -d --force-recreate gnb ue1)
   sleep "$TIMEOUT_SCENARIO_SECS"
   echo "Capture window done (PDU session timeout is the expected outcome)."
+elif [[ "$SCENARIO" == "pdu_session_rsp_timeout" ]]; then
+  # The egress twin of pdu_session_timeout: registration does not involve
+  # the SMF, so it completes normally (one flow, one unambiguous SUPI).
+  # The injection blackholes the SMF's SBI *responses* (source port 7777)
+  # from inside the SMF netns: every sm-context create reaches the SMF and
+  # is answered, but the answer never leaves, so the create hangs until the
+  # AMF's SBI deadline and then fails with 5GMM #90 -- the same N2
+  # signature as pdu_session_timeout, but the SBI plane now carries the
+  # parseable, SUPI-carrying create whose timeout procedure joins the flow
+  # (the input-drop variant kills the request before it is a message).
+  # The SMF still reaches the UPF, so N4 establishment completes (an
+  # accept, no incident); the N2 SetupRequest never reaches the gNB (the
+  # AMF has already dropped the SM context), so the N4 leg does not join.
+  echo "Blackholing the SMF SBI responses (sm-context creates will time out)..."
+  docker exec sandbox_smf iptables -A OUTPUT -p tcp --sport 7777 -j DROP
+  SMF_EGRESS_BLACKHOLED=1
+  (cd "$RAN_DIR" && docker compose up -d --force-recreate gnb ue1)
+  sleep "$TIMEOUT_SCENARIO_SECS"
+  echo "Capture window done (SBI create timeout joined to the flow is the expected outcome)."
 elif [[ "$SCENARIO" == "sbi_udm_timeout" ]]; then
   # Registration reaches the UDM through the AUSF (Nudm_UEAuthentication);
   # blackholing the UDM's SBI port from inside its netns (the same trick as

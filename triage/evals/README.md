@@ -1,8 +1,8 @@
 # triage evals
 
 The offline eval harness for `type_accuracy` and `diagnosis_quality`
-(CONTEXT.md), over the nine labeled failure-injection fixtures in
-`5gcap/tests/fixtures/` — all nine enabled. Runs explicitly — never
+(CONTEXT.md), over the ten labeled failure-injection fixtures in
+`5gcap/tests/fixtures/` — all ten enabled. Runs explicitly — never
 inside the default pytest suite, because every fixture run costs real Groq
 calls (ADR-0002).
 
@@ -22,7 +22,7 @@ synced.
 
 ## Targets
 
-- `type_accuracy` >= (n-1)/n over the enabled fixtures — 8/9 once all nine
+- `type_accuracy` >= (n-1)/n over the enabled fixtures — 9/10 once all ten
   are enabled — fixture-level mean of exact `incident_type` matches against
   the fixture's `.label.json`.
 - `diagnosis_quality` >= 0.7 — run-level mean of four 0–1 dimension scores

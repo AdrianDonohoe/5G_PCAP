@@ -61,34 +61,85 @@ def _mean(times: list[float]) -> float | None:
 
 def cross_plane_kpis(flows: list[Flow], corr, sbi_msgs, n4_msgs) -> dict:
     """The three cross-plane PDU-session latency means (ms), complete flows
-    only. Each KPI needs its legs present exactly once: the SBI leg is the
-    flow's sm-contexts create at the SMF that ran the session (its dst_ip
-    equals the joined N4 establishment response's dst_ip; without that
-    response the flow's creates must be unambiguous), the N4 leg is that
-    response, the N2 leg the flow's PDU-session SetupResponse. A flow
-    missing a leg is excluded from every KPI that needs it; nothing is
-    ever estimated."""
+    only. Each flow's joined legs are grouped into per-session triples by
+    their procedure anchors: the sm-contexts create's pduSessionId, the N4
+    establishment response's Created-PDR tunnel against the SetupRequest
+    item's UPF endpoint, and the SetupResponse item's pDUSessionID. Each
+    KPI needs its legs present exactly once per session — a session
+    missing or ambiguous on a leg is excluded from every KPI that needs
+    it, nothing is ever estimated. The SBI leg is the create that reached
+    the SMF running the session (the establishment response's dst_ip);
+    without an N4 anchor for the session it is matched by pduSessionId
+    alone. Flows with no session anchors anywhere degrade to the per-flow
+    exactly-once discipline."""
     sbi_to_n4, n4_to_n2, sbi_to_n2 = [], [], []
     for f in flows:
+        setup_reqs = [ng for ng, _ in f.messages
+                      if ng.name == "PDUSessionResourceSetupRequest"]
         setup_rsps = [ng for ng, _ in f.messages
                       if ng.name == "PDUSessionResourceSetupResponse"]
         est_rsps = [n4_msgs[i] for i in corr.flow_n4_refs.get(f.flow_id, [])
                     if n4_msgs[i].name == "PFCP Session Establishment Response"]
-        smf_ip = est_rsps[0].dst_ip if len(est_rsps) == 1 else None
         creates = [sbi_msgs[i] for i in corr.flow_sbi_refs.get(f.flow_id, [])
                    if (sbi_msgs[i].direction == "request"
                        and sbi_msgs[i].method == "POST"
-                       and sbi_msgs[i].path == "/nsmf-pdusession/v1/sm-contexts"
-                       and (smf_ip is None or sbi_msgs[i].dst_ip == smf_ip))]
-        create = creates[0] if len(creates) == 1 else None
-        est = est_rsps[0] if len(est_rsps) == 1 else None
-        setup = setup_rsps[0] if len(setup_rsps) == 1 else None
-        if create is not None and est is not None:
-            sbi_to_n4.append((est.ts - create.ts) * 1000.0)
-        if est is not None and setup is not None:
-            n4_to_n2.append((setup.ts - est.ts) * 1000.0)
-        if create is not None and setup is not None:
-            sbi_to_n2.append((setup.ts - create.ts) * 1000.0)
+                       and sbi_msgs[i].path == "/nsmf-pdusession/v1/sm-contexts")]
+        # Per-session anchors: the SetupRequest items' UPF-endpoint
+        # tunnels and the SetupResponse items' timestamps, keyed by
+        # pDUSessionID, plus the creates' pduSessionId.
+        req_tunnels: dict[int, set] = {}
+        rsp_ts: dict[int, list[float]] = {}
+        for ng in setup_reqs:
+            for sid, tunnels in ng.req_session_tunnels.items():
+                req_tunnels.setdefault(sid, set()).update(tunnels)
+        for ng in setup_rsps:
+            for sid, count in ng.rsp_session_counts.items():
+                rsp_ts.setdefault(sid, []).extend([ng.ts] * count)
+        session_ids = set(req_tunnels) | set(rsp_ts) | {
+            c.pdu_session_id for c in creates if c.pdu_session_id is not None}
+        if not session_ids:
+            # No per-session anchors: the per-flow exactly-once discipline.
+            smf_ip = est_rsps[0].dst_ip if len(est_rsps) == 1 else None
+            cs = [c for c in creates if smf_ip is None or c.dst_ip == smf_ip]
+            create = cs[0] if len(cs) == 1 else None
+            est = est_rsps[0] if len(est_rsps) == 1 else None
+            setup = setup_rsps[0] if len(setup_rsps) == 1 else None
+            if create is not None and est is not None:
+                sbi_to_n4.append((est.ts - create.ts) * 1000.0)
+            if est is not None and setup is not None:
+                n4_to_n2.append((setup.ts - est.ts) * 1000.0)
+            if create is not None and setup is not None:
+                sbi_to_n2.append((setup.ts - create.ts) * 1000.0)
+            continue
+        # The N4 leg anchors to its session via the Created-PDR tunnel; an
+        # establishment response matching two sessions anchors neither.
+        est_by_session: dict[int, list] = {}
+        for e in est_rsps:
+            hits = {sid for sid, tunnels in req_tunnels.items()
+                    if set(e.f_teids) & tunnels}
+            if len(hits) == 1:
+                est_by_session.setdefault(hits.pop(), []).append(e)
+        for sid in sorted(session_ids):
+            est_s = est_by_session.get(sid, [])
+            est = est_s[0] if len(est_s) == 1 else None
+            if est is not None:
+                # The SBI leg is the create that reached the SMF running
+                # the session (the establishment response's dst).
+                cs = [c for c in creates
+                      if c.pdu_session_id == sid and c.dst_ip == est.dst_ip]
+            else:
+                # No N4 anchor for the session: the create leg is matched
+                # by pduSessionId alone — two creates stay ambiguous.
+                cs = [c for c in creates if c.pdu_session_id == sid]
+            create = cs[0] if len(cs) == 1 else None
+            setup_s = rsp_ts.get(sid, [])
+            setup_ts = setup_s[0] if len(setup_s) == 1 else None
+            if create is not None and est is not None:
+                sbi_to_n4.append((est.ts - create.ts) * 1000.0)
+            if est is not None and setup_ts is not None:
+                n4_to_n2.append((setup_ts - est.ts) * 1000.0)
+            if create is not None and setup_ts is not None:
+                sbi_to_n2.append((setup_ts - create.ts) * 1000.0)
     return {"sbi_to_n4_ms": _mean(sbi_to_n4),
             "n4_to_n2_ms": _mean(n4_to_n2),
             "sbi_to_n2_ms": _mean(sbi_to_n2)}

@@ -69,6 +69,7 @@ class SbiMsg:
     body_len: int = 0
     name: str | None = None      # SBI service name, e.g. "Nudm_UEAuthentication"
     supi: str | None = None      # the SUPI the request declares (path or body)
+    pdu_session_id: int | None = None  # the PDU session a request body declares
     problem_title: str | None = None
     problem_cause: str | None = None
     unparsed: str | None = None
@@ -108,11 +109,10 @@ def _supi_from_path(path: str) -> str | None:
     return None
 
 
-def _supi_from_body(body: bytes) -> str | None:
-    """The SUPI a request's body declares in a "supi" field — either the
-    body's own JSON or the first (JSON) part of a multipart body (the
-    sm-contexts create has no identity in its path and sends its JSON and
-    the N1 container as multipart/related)."""
+def _body_json(body: bytes) -> dict | None:
+    """A request body's JSON object: the body itself, or the first (JSON)
+    part of a multipart body (the sm-contexts create sends its JSON and
+    the N1/N2 container as multipart/related)."""
     if not body:
         return None
     stripped = body.lstrip()
@@ -123,17 +123,40 @@ def _supi_from_body(body: bytes) -> str | None:
         end = stripped.find(b"\r\n" + boundary, len(boundary))
         if end < 0:
             return None
-        body = stripped[len(boundary):end].partition(b"\r\n\r\n")[2].strip()
+        stripped = stripped[len(boundary):end].partition(b"\r\n\r\n")[2].strip()
     try:
-        data = json.loads(body)
+        data = json.loads(stripped)
     except Exception:
         return None
-    sup = data.get("supi") if isinstance(data, dict) else None
+    return data if isinstance(data, dict) else None
+
+
+def _supi_from_body(body: bytes) -> str | None:
+    """The SUPI a request's body declares in a "supi" field — either the
+    body's own JSON or the first (JSON) part of a multipart body (the
+    sm-contexts create has no identity in its path and sends its JSON and
+    the N1 container as multipart/related)."""
+    data = _body_json(body)
+    if data is None:
+        return None
+    sup = data.get("supi")
     if not isinstance(sup, str):
         return None
     if sup.startswith("imsi-"):
         sup = sup[len("imsi-"):]
     return sup if re.fullmatch(r"\d{14,15}", sup) else None
+
+
+def _pdu_session_from_body(body: bytes) -> int | None:
+    """The PDU session id a request body declares in a "pduSessionId"
+    field (the sm-contexts create's JSON)."""
+    data = _body_json(body)
+    if data is None:
+        return None
+    sid = data.get("pduSessionId")
+    if isinstance(sid, bool) or not isinstance(sid, int):
+        return None
+    return sid
 
 
 def _decode_connection(conn: frozenset,
@@ -254,14 +277,15 @@ def _decode_connection(conn: frozenset,
     # Identity post-pass: a request's declared SUPI is whatever its path
     # and body agree on. Two different declarations, or a refused stream,
     # yield nothing — a message that can't speak with one voice never joins.
+    # The PDU session id comes from the body alone (no path form exists).
     for rec in requests.values():
         if rec.unparsed is not None:
             continue
+        body = bytes(bodies.get((rec.stream_id, "request"), b""))
         declared = {s for s in (_supi_from_path(rec.path or ""),
-                                _supi_from_body(bytes(bodies.get(
-                                    (rec.stream_id, "request"), b""))))
-                    if s}
+                                _supi_from_body(body)) if s}
         rec.supi = declared.pop() if len(declared) == 1 else None
+        rec.pdu_session_id = _pdu_session_from_body(body)
     return msgs
 
 

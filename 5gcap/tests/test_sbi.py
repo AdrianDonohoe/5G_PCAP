@@ -272,6 +272,30 @@ def test_supi_from_request_body(tmp_path):
     assert req.supi == "999700000000001"
 
 
+def test_pdu_session_id_from_request_body(tmp_path):
+    # The sm-contexts create's JSON body declares the session it anchors:
+    # "pduSessionId" as an int. Absent or non-int yields nothing.
+    body = b'{"supi": "imsi-999700000000001", "pduSessionId": 1}'
+    c2s, s2c = _exchange(_headers("/nsmf-pdusession/v1/sm-contexts"),
+                         request_body=body, status=201)
+    wrpcap(str(tmp_path / "x.pcap"),
+           [_segment(CLIENT, 40000, SERVER, SBI_PORT, c2s),
+            _segment(SERVER, SBI_PORT, CLIENT, 40000, s2c)])
+    req = next(m for m in read_sbi_capture(str(tmp_path / "x.pcap"))
+               if m.direction == "request")
+    assert req.pdu_session_id == 1
+
+    body = b'{"supi": "imsi-999700000000001", "dnn": "internet"}'
+    c2s, s2c = _exchange(_headers("/nsmf-pdusession/v1/sm-contexts"),
+                         request_body=body, status=201)
+    wrpcap(str(tmp_path / "y.pcap"),
+           [_segment(CLIENT, 40000, SERVER, SBI_PORT, c2s),
+            _segment(SERVER, SBI_PORT, CLIENT, 40000, s2c)])
+    req = next(m for m in read_sbi_capture(str(tmp_path / "y.pcap"))
+               if m.direction == "request")
+    assert req.pdu_session_id is None
+
+
 def test_conflicting_identities_yield_no_supi(tmp_path):
     # Path and body declare different identities: the message is not
     # trustworthy as a join key — no link.

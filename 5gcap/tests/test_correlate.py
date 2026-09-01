@@ -20,7 +20,7 @@ from fivegcap.correlate import Correlation, correlate
 from fivegcap.flow import Flow
 from fivegcap.kpi import cross_plane_kpis
 from fivegcap.nas import NasMsg
-from fivegcap.ngap import NgapMsg
+from fivegcap.ngap import NgapMsg, decode as ngap_decode
 from fivegcap.pfcp import PfcpMsg
 from fivegcap.sbi import SbiMsg
 from synth import (_pkt, downlink_nas_transport, initial_ue_message,
@@ -238,17 +238,49 @@ def _kpi_flow(fid: int, setup_ts: float) -> Flow:
     return f
 
 
-def _kpi_sbi(ts: float, dst_ip: str) -> SbiMsg:
-    return SbiMsg(ts=ts, stream_id=1, direction="request", method="POST",
-                  path="/nsmf-pdusession/v1/sm-contexts",
-                  name="Nsmf_PDUSession", conn=CONN, src_ip=CLIENT,
-                  dst_ip=dst_ip, src_port=40000, dst_port=7777)
+def _kpi_session_flow(fid: int,
+                      sessions: list[tuple[int, float | None,
+                                          tuple[int, str] | None]],
+                      ) -> Flow:
+    """Flow whose setup messages carry per-session anchors: each
+    (sid, rsp_ts, upf_tunnel) yields a SetupRequest item declaring the
+    session's UPF-endpoint tunnel and, when rsp_ts is given, a
+    SetupResponse item at rsp_ts."""
+    msgs = []
+    for sid, rsp_ts, tunnel in sessions:
+        req = NgapMsg(ts=0.0, assoc=(), stream=0, raw=b"",
+                      name="PDUSessionResourceSetupRequest")
+        if tunnel is not None:
+            req.req_session_tunnels = {sid: {tunnel}}
+        msgs.append((req, None))
+        if rsp_ts is not None:
+            rsp = NgapMsg(ts=rsp_ts, assoc=(), stream=0, raw=b"",
+                          name="PDUSessionResourceSetupResponse")
+            rsp.rsp_session_counts = {sid: 1}
+            msgs.append((rsp, None))
+    f = Flow(flow_id=fid, assoc=((45000, 38412)), ran_ue_id=fid,
+             amf_ue_id=fid, partial=False)
+    f.messages = msgs
+    return f
 
 
-def _kpi_est_rsp(ts: float, smf_ip: str) -> PfcpMsg:
-    return PfcpMsg(ts=ts, raw=b"", msg_type=51,
-                   name="PFCP Session Establishment Response", seq=1,
-                   src_ip=UPF, dst_ip=smf_ip)
+def _kpi_sbi(ts: float, dst_ip: str, pdu_session_id: int | None = None) -> SbiMsg:
+    m = SbiMsg(ts=ts, stream_id=1, direction="request", method="POST",
+               path="/nsmf-pdusession/v1/sm-contexts",
+               name="Nsmf_PDUSession", conn=CONN, src_ip=CLIENT,
+               dst_ip=dst_ip, src_port=40000, dst_port=7777)
+    m.pdu_session_id = pdu_session_id
+    return m
+
+
+def _kpi_est_rsp(ts: float, smf_ip: str,
+                 f_teids: list[tuple[int, str]] | None = None) -> PfcpMsg:
+    m = PfcpMsg(ts=ts, raw=b"", msg_type=51,
+                name="PFCP Session Establishment Response", seq=1,
+                src_ip=UPF, dst_ip=smf_ip)
+    if f_teids is not None:
+        m.f_teids = list(f_teids)
+    return m
 
 
 def _kpi_corr(flow_n4_refs=None, flow_sbi_refs=None) -> Correlation:
@@ -308,6 +340,106 @@ def test_missing_leg_excludes_only_the_kpis_that_need_it():
     assert k["sbi_to_n2_ms"] == pytest.approx(60.0)
 
 
+def test_two_session_flow_contributes_two_legs_per_kpi():
+    # Sessions 1 and 2, both complete: creates 0.040/0.200 at the SMF,
+    # establishment responses 0.080/0.260 keyed by their session's UPF
+    # tunnel, SetupResponses 0.100/0.300. Legs 40/60 (sbi->n4), 20/40
+    # (n4->n2), 60/100 (sbi->n2) -> means 50/30/80.
+    flows = [_kpi_session_flow(1, [
+        (1, 0.100, (56400, "10.53.0.13")),
+        (2, 0.300, (56401, "10.53.0.14"))])]
+    sbi = [_kpi_sbi(0.040, SMF, pdu_session_id=1),
+           _kpi_sbi(0.200, SMF, pdu_session_id=2)]
+    n4 = [_kpi_est_rsp(0.080, SMF, [(56400, "10.53.0.13")]),
+          _kpi_est_rsp(0.260, SMF, [(56401, "10.53.0.14")])]
+    corr = _kpi_corr({1: [0, 1]}, {1: [0, 1]})
+    k = cross_plane_kpis(flows, corr, sbi, n4)
+    assert k["sbi_to_n4_ms"] == pytest.approx(50.0)
+    assert k["n4_to_n2_ms"] == pytest.approx(30.0)
+    assert k["sbi_to_n2_ms"] == pytest.approx(80.0)
+
+
+def test_session_missing_a_leg_is_excluded_from_its_kpis():
+    # Session 2 has no create: sbi->n4 and sbi->n2 see only session 1
+    # (40/60), n4->n2 still sees both sessions (20 + 40 -> 30).
+    flows = [_kpi_session_flow(1, [
+        (1, 0.100, (56400, "10.53.0.13")),
+        (2, 0.300, (56401, "10.53.0.14"))])]
+    sbi = [_kpi_sbi(0.040, SMF, pdu_session_id=1)]
+    n4 = [_kpi_est_rsp(0.080, SMF, [(56400, "10.53.0.13")]),
+          _kpi_est_rsp(0.260, SMF, [(56401, "10.53.0.14")])]
+    corr = _kpi_corr({1: [0, 1]}, {1: [0]})
+    k = cross_plane_kpis(flows, corr, sbi, n4)
+    assert k["sbi_to_n4_ms"] == pytest.approx(40.0)
+    assert k["n4_to_n2_ms"] == pytest.approx(30.0)
+    assert k["sbi_to_n2_ms"] == pytest.approx(60.0)
+
+
+def test_ambiguous_create_excludes_only_the_sbi_kpis():
+    # Two creates for session 1: the SBI leg is ambiguous, so sbi->n4 and
+    # sbi->n2 drop the session; n4->n2 stands on the exact N4/N2 legs.
+    flows = [_kpi_session_flow(1, [(1, 0.100, (56400, "10.53.0.13"))])]
+    sbi = [_kpi_sbi(0.040, SMF, pdu_session_id=1),
+           _kpi_sbi(0.041, SMF, pdu_session_id=1)]
+    n4 = [_kpi_est_rsp(0.080, SMF, [(56400, "10.53.0.13")])]
+    corr = _kpi_corr({1: [0]}, {1: [0, 1]})
+    k = cross_plane_kpis(flows, corr, sbi, n4)
+    assert k["sbi_to_n4_ms"] is None
+    assert k["n4_to_n2_ms"] == pytest.approx(20.0)
+    assert k["sbi_to_n2_ms"] is None
+
+
+def test_session_missing_est_is_excluded_from_the_kpis_that_need_it():
+    # Session 2 has no N4 establishment response: sbi->n4 and n4->n2 see
+    # only session 1 (40/20); sbi->n2 sees both (60 + 100 -> 80).
+    flows = [_kpi_session_flow(1, [
+        (1, 0.100, (56400, "10.53.0.13")),
+        (2, 0.300, (56401, "10.53.0.14"))])]
+    sbi = [_kpi_sbi(0.040, SMF, pdu_session_id=1),
+           _kpi_sbi(0.200, SMF, pdu_session_id=2)]
+    n4 = [_kpi_est_rsp(0.080, SMF, [(56400, "10.53.0.13")])]
+    corr = _kpi_corr({1: [0]}, {1: [0, 1]})
+    k = cross_plane_kpis(flows, corr, sbi, n4)
+    assert k["sbi_to_n4_ms"] == pytest.approx(40.0)
+    assert k["n4_to_n2_ms"] == pytest.approx(20.0)
+    assert k["sbi_to_n2_ms"] == pytest.approx(80.0)
+
+
+def test_session_missing_setup_is_excluded_from_the_kpis_that_need_it():
+    # Session 2 has no N2 SetupResponse: n4->n2 and sbi->n2 see only
+    # session 1 (20/60); sbi->n4 still sees both (40 + 60 -> 50).
+    flows = [_kpi_session_flow(1, [
+        (1, 0.100, (56400, "10.53.0.13")),
+        (2, None, (56401, "10.53.0.14"))])]
+    sbi = [_kpi_sbi(0.040, SMF, pdu_session_id=1),
+           _kpi_sbi(0.200, SMF, pdu_session_id=2)]
+    n4 = [_kpi_est_rsp(0.080, SMF, [(56400, "10.53.0.13")]),
+          _kpi_est_rsp(0.260, SMF, [(56401, "10.53.0.14")])]
+    corr = _kpi_corr({1: [0, 1]}, {1: [0, 1]})
+    k = cross_plane_kpis(flows, corr, sbi, n4)
+    assert k["sbi_to_n4_ms"] == pytest.approx(50.0)
+    assert k["n4_to_n2_ms"] == pytest.approx(20.0)
+    assert k["sbi_to_n2_ms"] == pytest.approx(60.0)
+
+
+def test_est_response_matching_two_sessions_excludes_only_the_n4_kpis():
+    # One establishment response whose Created-PDR tunnel appears in two
+    # sessions' SetupRequest items: the anchor is ambiguous, so sbi->n4
+    # and n4->n2 exclude both sessions — never a guess. The SBI legs are
+    # per-session exact on their own, so sbi->n2 stands (60 + 100 -> 80).
+    flows = [_kpi_session_flow(1, [
+        (1, 0.100, (56400, "10.53.0.13")),
+        (2, 0.300, (56400, "10.53.0.13"))])]
+    sbi = [_kpi_sbi(0.040, SMF, pdu_session_id=1),
+           _kpi_sbi(0.200, SMF, pdu_session_id=2)]
+    n4 = [_kpi_est_rsp(0.080, SMF, [(56400, "10.53.0.13")])]
+    corr = _kpi_corr({1: [0]}, {1: [0, 1]})
+    k = cross_plane_kpis(flows, corr, sbi, n4)
+    assert k["sbi_to_n4_ms"] is None
+    assert k["n4_to_n2_ms"] is None
+    assert k["sbi_to_n2_ms"] == pytest.approx(80.0)
+
+
 def test_merged_export_carries_cross_plane_kpis(tmp_path):
     # The n4-links synthetic pair plus the SBI leg: the sm-contexts create
     # (body-only supi ...002) at the N4 SMF and its 201. Create 0.040, N4
@@ -336,7 +468,8 @@ def test_merged_export_carries_cross_plane_kpis(tmp_path):
     sbi = tmp_path / "sbi.pcap"
     c2s, s2c = _exchange(
         _headers("/nsmf-pdusession/v1/sm-contexts"),
-        request_body=b'{"supi": "imsi-999700000000002"}', status=201)
+        request_body=b'{"supi": "imsi-999700000000002", "pduSessionId": 1}',
+        status=201)
     pk1 = _segment(SERVER, 40000, SMF, 7777, c2s)
     pk1.time = 0.040
     pk2 = _segment(SMF, 7777, SERVER, 40000, s2c)
@@ -349,3 +482,15 @@ def test_merged_export_carries_cross_plane_kpis(tmp_path):
     assert kpis["sbi_to_n4_ms"] == pytest.approx(40.0)
     assert kpis["n4_to_n2_ms"] == pytest.approx(20.0)
     assert kpis["sbi_to_n2_ms"] == pytest.approx(60.0)
+
+
+def test_setup_items_decode_per_session_anchors():
+    # The wire-level extraction: the builders' setup-list items carry
+    # pDUSessionID 1, so each decoded message anchors session 1 with its
+    # swapped tunnel.
+    req = ngap_decode(0.0, (), 0, pdu_session_setup_request(56400, 0x0A35000D, 1))
+    assert req.req_session_tunnels == {1: {(56400, "10.53.0.13")}}
+    assert req.rsp_session_counts == {}
+    rsp = ngap_decode(0.0, (), 0, pdu_session_setup_response(1, 0x0A350014, 1))
+    assert rsp.rsp_session_counts == {1: 1}
+    assert rsp.req_session_tunnels == {}

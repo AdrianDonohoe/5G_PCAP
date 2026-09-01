@@ -24,6 +24,11 @@ class NgapMsg:
     f_teids: list = field(default_factory=list)  # GTP tunnels (teid, ip) the
         # message declares: the SetupRequest's UPF endpoint, the
         # SetupResponse's gNB endpoint — the N2<->N4 join keys
+    req_session_tunnels: dict = field(default_factory=dict)  # pDUSessionID ->
+        # the SetupRequest item's UPF-endpoint tunnels — the per-session
+        # refinement of the N2<->N4 join keys above
+    rsp_session_counts: dict = field(default_factory=dict)  # pDUSessionID ->
+        # SetupResponse item count in this message (the per-session N2 leg)
     unparsed: str | None = None      # decode failure note
     src_ip: str | None = None
     dst_ip: str | None = None
@@ -63,12 +68,15 @@ def decode(ts: float, assoc: tuple, stream: int, data: bytes,
             elif ie_name == "NAS-PDU":
                 nas_pdu = _to_bytes(ie_val)
         f_teids = _tunnels_of(ies)
+        req_sessions, rsp_items = _pdu_sessions_of(ies)
         # Commit only on full success: a mid-extraction failure leaves the
         # message refused-only, never half-decoded (decoded XOR refused).
         m.kind, m.proc_code, m.name = kind, proc_code, name
         m.ran_ue_id, m.amf_ue_id, m.nas_pdu = ran_ue_id, amf_ue_id, nas_pdu
         m.ies = ies
         m.f_teids = f_teids
+        m.req_session_tunnels = req_sessions
+        m.rsp_session_counts = rsp_items
     except Exception as e:  # lenient: never fatal (parse or extraction)
         m.unparsed = f"NGAP decode failed: {e!r}"
     return m
@@ -173,3 +181,40 @@ def _tunnels_of(ies: dict) -> list:
                         if t is not None:
                             tunnels.append(t)
     return tunnels
+
+
+def _pdu_sessions_of(ies: dict) -> tuple[dict, dict]:
+    """Per-session anchors from the setup lists: the SetupRequest items'
+    UPF-endpoint tunnels keyed by pDUSessionID, and the SetupResponse
+    items' counts keyed by pDUSessionID. Lenient like `_tunnels_of`: an
+    unreadable item or id yields nothing."""
+    req_sessions: dict[int, set] = {}
+    rsp_items: dict[int, int] = {}
+    for ie_name, ie_val in ies.items():
+        if ie_name == "PDUSessionResourceSetupListSUReq":
+            for item in ie_val if isinstance(ie_val, list) else []:
+                if not isinstance(item, dict):
+                    continue
+                sid = item.get("pDUSessionID")
+                if isinstance(sid, bool) or not isinstance(sid, int):
+                    continue
+                xfer = item.get("pDUSessionResourceSetupRequestTransfer")
+                if not (isinstance(xfer, (list, tuple)) and len(xfer) > 1
+                        and isinstance(xfer[1], dict)):
+                    continue
+                tunnels = req_sessions.setdefault(sid, set())
+                for pie in xfer[1].get("protocolIEs", []):
+                    if pie.get("id") != 139:  # UPTransportLayerInformation
+                        continue
+                    t = _tunnel_of(pie.get("value", [None])[1])
+                    if t is not None:
+                        tunnels.add(t)
+        elif ie_name == "PDUSessionResourceSetupListSURes":
+            for item in ie_val if isinstance(ie_val, list) else []:
+                if not isinstance(item, dict):
+                    continue
+                sid = item.get("pDUSessionID")
+                if isinstance(sid, bool) or not isinstance(sid, int):
+                    continue
+                rsp_items[sid] = rsp_items.get(sid, 0) + 1
+    return req_sessions, rsp_items

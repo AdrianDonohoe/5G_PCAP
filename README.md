@@ -1,4 +1,6 @@
-# 5G_PCAP
+# NetCortex
+
+An Agentic AI Platform for Autonomous Network Operations
 
 5G control-plane capture analysis: decode NGAP/NAS (N2), PFCP (N4), and SBI
 (HTTP/2) captures, map per-UE flows, compute KPIs, triage failed
@@ -48,6 +50,13 @@ remediation pipeline.
   [`README`](dispatch/docs/diagrams/README.md); and
   [`triage/docs/diagrams/`](triage/docs/diagrams/) holds the triage
   invocation-flow diagram (IR + SVG).
+
+## Roadmap
+
+Planned as sibling projects on this platform: a **Change Impact Agent**, a
+**Cross-Domain Incident Correlation** project, and a **Digital Twin** —
+each will land as its own top-level directory alongside `5gcap/`,
+`triage/`, and `dispatch/`.
 
 ## Development
 

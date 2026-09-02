@@ -45,7 +45,7 @@ def _graph():
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         prog="dispatch",
-        description="Incident orchestration for the 5G_PCAP stack",
+        description="Incident orchestration for the NetCortex stack",
     )
     sub = ap.add_subparsers(dest="cmd", required=True)
 

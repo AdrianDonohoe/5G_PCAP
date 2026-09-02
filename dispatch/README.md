@@ -1,6 +1,6 @@
 # dispatch
 
-Event-driven incident orchestration for the 5G_PCAP stack. An Alarm
+Event-driven incident orchestration for the NetCortex stack. An Alarm
 event — raised by a human or synthesized from KPI degradation — flows
 through the Dispatcher, which fans out to the three specialist evidence
 agents (PCAP, Log, KPI), correlates their findings, runs a root-cause
@@ -148,7 +148,7 @@ never self-applies (ADR-0003).
 real end-to-end `n4_upf_timeout` run: `detect-kpi` over fresh lab
 captures, then `handle` with the live specialists, ending pending at the
 approval gate. The rendered command's checkout path is normalized
-(`/path/to/5G_PCAP`); everything else is byte-faithful, and the proposal
+(`/path/to/NetCortex`); everything else is byte-faithful, and the proposal
 hash still verifies the three proposal fields against the record. One
 invisible detail is load-bearing: the proposal justification contains a
 narrow no-break space (U+202F) in "NAS cause 38", and the hash covers

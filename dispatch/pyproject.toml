@@ -1,7 +1,7 @@
 [project]
 name = "dispatch"
 version = "0.1.0"
-description = "Event-driven incident orchestration for the 5G_PCAP stack: alarm events, specialist evidence agents, correlation, human-approved remediation"
+description = "Event-driven incident orchestration for the NetCortex stack: alarm events, specialist evidence agents, correlation, human-approved remediation"
 requires-python = ">=3.12"
 dependencies = [
     "dspy>=3.3.0",

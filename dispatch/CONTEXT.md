@@ -1,6 +1,6 @@
 # dispatch
 
-Event-driven incident orchestration for the 5G_PCAP stack: an Alarm event
+Event-driven incident orchestration for the NetCortex stack: an Alarm event
 (human-raised, or synthesized from KPI degradation) flows through the
 Dispatcher — an Incident Manager agent that fans out to three specialist
 evidence agents (PCAP, Log, KPI), links their findings into a correlation

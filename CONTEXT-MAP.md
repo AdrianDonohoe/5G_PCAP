@@ -1,5 +1,8 @@
 # Context Map
 
+**NetCortex** is the platform — an agentic AI platform for autonomous
+network operations. The three current contexts:
+
 ## Contexts
 
 - [5gcap](./CONTEXT.md) — deterministic, offline decoding of NGAP/NAS, PFCP, and SBI (HTTP/2) captures into Flows, Procedures, and KPIs. No network access, no LLM dependency, fully reproducible run-to-run.

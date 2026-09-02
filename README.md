@@ -7,6 +7,22 @@ An Agentic AI Platform for Autonomous Network Operations
 procedures with an LLM agent, and run incidents through a human-gated
 remediation pipeline.
 
+## The dispatch pipeline
+
+![Dispatch pipeline — raise or detect, handle, human-gated execution, close + learn](dispatch/docs/diagrams/pipeline.png)
+
+One incident, end to end: an Alarm event (human-raised or synthesized
+from KPI degradation) fans out to three specialist evidence agents,
+their findings are correlated, a LATS root-cause search runs, and a
+remediation proposal from a fixed five-action vocabulary waits at the
+Human approval gate — with the Outcome feeding a gated learning loop.
+The committed end-to-end
+[`sample Incident Record`](dispatch/docs/sample-incident-record.md) shows
+a real `n4_upf_timeout` run: detected from KPI degradation, investigated
+by the live specialists, left **pending** at the gate. The diagram's
+source of truth is
+[`dispatch/docs/diagrams/pipeline.json`](dispatch/docs/diagrams/pipeline.json).
+
 ## Layout
 
 - [`5gcap/`](5gcap/) — the analyzer itself (`5gcap analyze <file.pcap>`),
@@ -30,7 +46,8 @@ remediation pipeline.
   PCAP/Log/KPI specialist agents ground evidence against the decode,
   core logs and the Golden baseline, a root-cause search correlates it,
   and a remediation proposal from a fixed five-action vocabulary waits
-  at a Human approval gate. A real end-to-end sample Incident Record is
+  at a Human approval gate. A real end-to-end
+  [`sample Incident Record`](dispatch/docs/sample-incident-record.md) is
   committed. See [`dispatch/README.md`](dispatch/README.md).
 - [`CONTEXT.md`](CONTEXT.md) — 5gcap domain glossary (Capture, Flow,
   Procedure, KPI, Partial Flow); [`triage/CONTEXT.md`](triage/CONTEXT.md) —

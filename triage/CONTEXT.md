@@ -125,7 +125,8 @@ _Avoid_: span, record, entry
 
 **Tracing gate**:
 The opt-in condition that arms tracing: `LANGSMITH_TRACING` truthy *and*
-`LANGCHAIN_API_KEY` set. With the gate off, no tracer is constructed and no
+a LangSmith key set (`LANGCHAIN_API_KEY` or `LANGSMITH_API_KEY` — the SDK
+accepts both). With the gate off, no tracer is constructed and no
 network is used — ADR-0002's offline posture holds.
 _Avoid_: tracing flag, observability switch
 

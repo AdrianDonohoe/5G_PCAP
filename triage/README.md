@@ -60,7 +60,7 @@ committed:
 
 ```
 export LANGSMITH_TRACING=true      # gate flag: any truthy value
-export LANGCHAIN_API_KEY=...       # gate requires this too
+export LANGCHAIN_API_KEY=...       # gate requires this too (LANGSMITH_API_KEY also works)
 export LANGSMITH_PROJECT=triage-dispatch   # where runs land (shared with dispatch)
 ```
 

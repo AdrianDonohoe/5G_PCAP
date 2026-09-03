@@ -25,7 +25,8 @@ def gate_env(monkeypatch):
 
 
 def test_config_has_no_tracer_by_default(monkeypatch):
-    for key in ("LANGSMITH_TRACING", "LANGCHAIN_API_KEY"):
+    for key in ("LANGSMITH_TRACING", "LANGCHAIN_API_KEY",
+                "LANGSMITH_API_KEY"):
         monkeypatch.delenv(key, raising=False)
     assert "callbacks" not in graph_mod._config("incident-1")
 

@@ -13,6 +13,7 @@ from triage.evidence import DecodedCapture
 from triage.search import run_lats
 
 GATE_ENV = {"LANGSMITH_TRACING": "true", "LANGCHAIN_API_KEY": "test-key",
+            "LANGSMITH_API_KEY": "test-key",
             "LANGSMITH_PROJECT": "triage-dispatch"}
 
 
@@ -25,7 +26,9 @@ class StubRunTree:
         self.name = data.get("name")
         self.run_type = data.get("run_type")
         self.inputs = data.get("inputs")
-        self.metadata = data.get("metadata") or {}
+        extra = data.get("extra") or {}
+        # the SDK reads extra.metadata back as run.metadata
+        self.metadata = extra.get("metadata", extra)
         self.parent_run = data.get("parent_run")
         self.outputs = None
         self.error = None
@@ -82,6 +85,10 @@ def test_enabled_requires_both_flag_and_key(tracing_off, monkeypatch):
     monkeypatch.setenv("LANGCHAIN_API_KEY", "test-key")
     assert not tracing.enabled()
     monkeypatch.setenv("LANGSMITH_TRACING", "true")
+    assert tracing.enabled()
+    # the newer env name is accepted too (the SDK treats both as one)
+    monkeypatch.delenv("LANGCHAIN_API_KEY")
+    monkeypatch.setenv("LANGSMITH_API_KEY", "test-key")
     assert tracing.enabled()
     monkeypatch.setenv("LANGSMITH_TRACING", "false")
     assert not tracing.enabled()

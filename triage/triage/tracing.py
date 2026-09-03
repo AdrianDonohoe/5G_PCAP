@@ -1,8 +1,9 @@
 """LangSmith tracing for the LATS search (ADR-0009).
 
 The gate is explicit: tracing arms only when LANGSMITH_TRACING is a
-truthy flag *and* LANGCHAIN_API_KEY is set; otherwise enabled() is
-False, install() does nothing, and trace_run() yields without
+truthy flag *and* a LangSmith key is set (LANGCHAIN_API_KEY or the
+newer LANGSMITH_API_KEY — the SDK accepts both); otherwise enabled()
+is False, install() does nothing, and trace_run() yields without
 constructing anything — ADR-0002's offline posture holds and pytest
 never pays LangSmith.
 
@@ -29,8 +30,10 @@ _PARENT_RUN = contextvars.ContextVar("tracing_parent_run", default=None)
 
 
 def enabled() -> bool:
+    key = (os.environ.get("LANGCHAIN_API_KEY")
+           or os.environ.get("LANGSMITH_API_KEY"))
     return (os.environ.get("LANGSMITH_TRACING", "").lower() in _TRUTHY
-            and bool(os.environ.get("LANGCHAIN_API_KEY")))
+            and bool(key))
 
 
 def _run_tree(**data):
@@ -53,8 +56,11 @@ class LangSmithCallback(BaseCallback):
         self._runs = {}
 
     def _start(self, call_id, name, run_type, inputs):
+        # Run metadata lives at extra.metadata in LangSmith's payload —
+        # RunTree has no `metadata` field, and a flat extra never reads
+        # back (the SDK returns extra.metadata as run.metadata).
         run = _run_tree(name=name, run_type=run_type, inputs=inputs,
-                        metadata={"source": SOURCE},
+                        extra={"metadata": {"source": SOURCE}},
                         parent_run=self._parent())
         self._runs[call_id] = run
 
@@ -117,7 +123,7 @@ def trace_run(name: str, **metadata):
         yield
         return
     run = _run_tree(name=name, run_type="chain", inputs=dict(metadata),
-                    metadata={"source": SOURCE, **metadata},
+                    extra={"metadata": {"source": SOURCE, **metadata}},
                     parent_run=_PARENT_RUN.get())
     token = _PARENT_RUN.set(run)
     try:

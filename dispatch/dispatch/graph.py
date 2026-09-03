@@ -25,6 +25,8 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 
+from triage import tracing
+
 from .correlation import link
 from .evidence import AlarmEvent, EvidenceItem
 from .executor import Executor, OBSERVE_ONLY_NOTE, proposal_hash
@@ -54,7 +56,14 @@ class State(TypedDict, total=False):
 
 
 def _config(incident_id: str) -> dict:
-    return {"configurable": {"thread_id": incident_id}}
+    config = {"configurable": {"thread_id": incident_id}}
+    if tracing.enabled():
+        # ADR-0009: with the gate on, the LangGraph spine posts its own
+        # trace tree — separate from the dspy runs triage's callback fans
+        # out. Imported lazily so the offline suite never constructs it.
+        from langchain_core.tracers.langchain import LangChainTracer
+        config["callbacks"] = [LangChainTracer()]
+    return config
 
 
 def _replace_evidence(state: State, source: str, items: list) -> None:

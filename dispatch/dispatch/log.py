@@ -23,6 +23,8 @@ from pathlib import Path
 
 import dspy
 
+from triage import tracing
+
 # dspy treats the first segment of the model string as its provider and
 # sends the rest; Groq's own model IDs carry an "openai/" vendor prefix
 # (openai/gpt-oss-120b), hence the doubled prefix. Same pin as triage's
@@ -77,6 +79,11 @@ def _groq_lm():
     lm = dspy.LM(GROQ[0], api_base=GROQ[1], api_key=key, cache=False,
                  max_tokens=8192)
     dspy.configure(lm=lm)
+    # ADR-0009: arm LangSmith tracing if the gate is on; every dspy call
+    # in this process (log extraction, proposal, the imported root-cause
+    # search) then fans out runs tagged source="dispatch" into the shared
+    # triage-dispatch project. Idempotent no-op with the gate off.
+    tracing.install(source="dispatch")
     return lm
 
 

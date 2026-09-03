@@ -52,6 +52,35 @@ invocation, decision by decision, is in
 fallback (gpt-oss:120b via Groq; see ADR-0002). The corpus build and the
 test suite run without it.
 
+## Observability
+
+LangSmith tracing is opt-in and off by default (ADR-0009). Arm it with
+three environment variables — none of them is ever read from a file or
+committed:
+
+```
+export LANGSMITH_TRACING=true      # gate flag: any truthy value
+export LANGCHAIN_API_KEY=...       # gate requires this too
+export LANGSMITH_PROJECT=triage-dispatch   # where runs land (shared with dispatch)
+```
+
+With the gate off (the default, including in the test suite), no tracer
+is constructed and no network is used — `pytest` never pays LangSmith.
+
+When armed, each LATS search posts one **Trace**: a root run
+`lats-search` carrying the incident's procedure, shape, flow id, and
+objective as inputs, and the final Episode as its output. Nested under
+it are the search's node phases — `node.<depth>.expand`, `.execute`, and
+`.evaluate` runs — and under each phase the dspy module runs
+(`ExpandSignature`, `EvaluateSignature`) and their LM calls, with
+prompts, outputs, and token usage. Parent-child structure mirrors the
+search tree, not the call stack, so a trace reads like the search itself.
+The callback lives in [`triage/tracing.py`](./triage/tracing.py) and is
+installed when the Groq LM builds; tracing failure (a dropped upload,
+say) is logged and swallowed — it can never break a run. Dispatch
+inherits this tracing for its dspy calls via the same module; its
+LangGraph spine hooks in separately (see dispatch's README).
+
 ## Usage
 
 ```

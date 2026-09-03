@@ -36,6 +36,7 @@ from triage.evidence import DecodedCapture
 from triage.memory import Episode, MemoryStore, query_episodic_memory
 from triage.specrag import query_3gpp_spec
 from triage.topology import query_topology
+from triage import tracing
 
 TOOLS = ("inspect", "topology", "spec", "memory", "finalize")
 
@@ -346,14 +347,20 @@ class Tree:
         self.exit_on_complete = True
 
     def _observe_and_evaluate(self, child: Node, objective: str) -> None:
-        observation, episode = self.execute(child.action)
+        with tracing.trace_run(f"node.{child.depth}.execute",
+                               action=child.action):
+            observation, episode = self.execute(child.action)
         child.observation = observation
         child.episode = episode
         try:
-            result = self.evaluate(objective, _trajectory_text(child))
+            with tracing.trace_run(f"node.{child.depth}.evaluate",
+                                   action=child.action):
+                result = self.evaluate(objective, _trajectory_text(child))
             reward = float(_field(result, "reward", 0.0))
             status = str(_field(result, "status", "incomplete"))
         except Exception:
+            # The trace shows the failure on the evaluate run; the tree
+            # degrades as before.
             reward, status = 0.0, "failed"
         child.reward = reward
         # Completeness is deterministic: a grounded finalize completes the
@@ -368,8 +375,9 @@ class Tree:
             return
         if not node.children:
             try:
-                actions = self.expand(objective, _trajectory_text(node),
-                                      n_branches)
+                with tracing.trace_run(f"node.{node.depth}.expand"):
+                    actions = self.expand(objective, _trajectory_text(node),
+                                          n_branches)
             except Exception:
                 actions = []
             seen = set()
@@ -421,11 +429,13 @@ class Tree:
         if best is None:
             return []
         try:
-            actions = self.expand(
-                objective,
-                _trajectory_text(best) +
-                "\nPropose exactly one finalize action from this "
-                "trajectory: it must end the search now.", 1)
+            with tracing.trace_run(f"node.{best.depth}.expand",
+                                   action="finalize"):
+                actions = self.expand(
+                    objective,
+                    _trajectory_text(best) +
+                    "\nPropose exactly one finalize action from this "
+                    "trajectory: it must end the search now.", 1)
         except Exception:
             return []
         for action in actions:
@@ -564,6 +574,10 @@ def _groq_lm():
     lm = dspy.LM(GROQ[0], api_base=GROQ[1], api_key=key, cache=False,
                  max_tokens=8192)
     dspy.configure(lm=lm)
+    # ADR-0009: arm LangSmith tracing if the gate is on (idempotent no-op
+    # otherwise); the module and LM calls below then trace as tree-shaped
+    # runs. install() lives here so importing search.py never touches it.
+    tracing.install()
     return lm
 
 
@@ -611,5 +625,17 @@ def run_lats(capture: DecodedCapture, incident: dict,
                 execute=lambda action: execute_action(capture, action,
                                                       store, spec_index),
                 C=C, max_depth=max_depth)
-    return tree.run(objective_text(incident, memory=memory),
-                    n_branches=n_branches, max_rollouts=max_rollouts)
+    objective = objective_text(incident, memory=memory)
+    # ADR-0009: with the tracing gate on, this is the Trace's root run and
+    # the node phases inside tree.run() become its children.
+    with tracing.trace_run(
+            "lats-search",
+            procedure=incident.get("procedure"),
+            shape=incident.get("shape"),
+            flow_id=incident.get("flow_id"),
+            objective=objective) as run:
+        result = tree.run(objective, n_branches=n_branches,
+                          max_rollouts=max_rollouts)
+        if run is not None and result.episode is not None:
+            run.end(outputs={"episode": result.episode.model_dump()})
+    return result

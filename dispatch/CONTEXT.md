@@ -128,3 +128,11 @@ for an operator to review and promote. Human-gated throughout —
 nothing the loop learns takes effect without a human moving it into
 place.
 _Avoid_: auto-learning, self-improvement
+
+**Trace**:
+The LangSmith record of one pipeline run, inherited from triage: dispatch's
+dspy calls (log extraction, the root-cause investigation, the proposal)
+trace through triage's callback, and the LangGraph spine hooks in
+separately. Off unless the tracing gate is on (triage's glossary defines
+Trace, Run, and the gate).
+_Avoid_: log, event stream

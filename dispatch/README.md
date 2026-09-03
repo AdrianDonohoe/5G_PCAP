@@ -164,6 +164,22 @@ it — do not "fix" the typography.
 - Everything else — 5gcap, the KPI comparator, the templates, the
   record rendering — is deterministic and offline.
 
+## Observability
+
+LangSmith tracing is opt-in and off by default (ADR-0009), armed by the
+same three environment variables triage documents (gate flag, API key,
+and `LANGSMITH_PROJECT=triage-dispatch` — env-only, never committed).
+With the gate on, one pipeline run posts two trace trees: the LangGraph
+spine — gather → specialists → correlate → investigate → propose →
+approval — as its own run tree, and the dspy calls inside it (log
+extraction, the imported LATS search with its node phases, the
+proposal) as runs tagged `source="dispatch"` through triage's callback.
+The two trees are separate by design; dispatch's dspy runs land in the
+same LangSmith project as triage's. With the gate off — the default,
+including the test suite — no tracer is constructed and no network is
+used. Tracing failure is logged and swallowed: it can never break a
+run.
+
 ## Eval harness
 
 [`evals/README.md`](./evals/README.md) runs all ten failure-injection

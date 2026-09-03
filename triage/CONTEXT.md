@@ -70,7 +70,7 @@ _Avoid_: step, tool call, operation
 One candidate sequence of (Action, observation) pairs explored during the
 LATS search, scored by the evaluate step. The winning Trajectory's final
 observation becomes the Hypothesis.
-_Avoid_: path, rollout, run
+_Avoid_: path, rollout
 
 **Topology**:
 The network-element roles (which IP is the AMF/SMF/UPF/gNB) and UE/Flow
@@ -108,3 +108,29 @@ Evidence, Causality) rating a Hypothesis's narrative, produced by an LLM judge
 distinct from the model that generated the Hypothesis. Runs only in the
 offline eval harness, never during a live invocation.
 _Avoid_: quality score, judge score
+
+**Trace**:
+The LangSmith record of one root run — a single LATS search invocation (in
+dispatch, one pipeline run) — containing nested child runs. Off unless the
+tracing gate is on. The dspy callback that feeds it lives in
+`triage/tracing.py`; dispatch inherits it.
+_Avoid_: log, event stream
+
+**Run**:
+One node of a Trace — a search node's phase (`expand`, `execute`,
+`evaluate`, `backprop`), a dspy module call, or an LM call — with its
+inputs, outputs, and timing. Parent–child structure mirrors the search
+tree, not the call stack.
+_Avoid_: span, record, entry
+
+**Tracing gate**:
+The opt-in condition that arms tracing: `LANGSMITH_TRACING` truthy *and*
+`LANGCHAIN_API_KEY` set. With the gate off, no tracer is constructed and no
+network is used — ADR-0002's offline posture holds.
+_Avoid_: tracing flag, observability switch
+
+**LangSmith project**:
+The named bucket a Trace posts to, from the `LANGSMITH_PROJECT`
+environment variable (never committed). Triage and dispatch share one
+project; runs are tagged by source.
+_Avoid_: dashboard, workspace

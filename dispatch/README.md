@@ -173,7 +173,8 @@ With the gate on, one pipeline run posts two trace trees: the LangGraph
 spine — gather → specialists → correlate → investigate → propose →
 approval — as its own run tree, and the dspy calls inside it (log
 extraction, the imported LATS search with its node phases, the
-proposal) as runs tagged `source="dispatch"` through triage's callback.
+proposal) as runs tagged `source="dispatch"` through triage's callback
+(including `reasoning_content` on its LM runs).
 The two trees are separate by design; dispatch's dspy runs land in the
 same LangSmith project as triage's. With the gate off — the default,
 including the test suite — no tracer is constructed and no network is

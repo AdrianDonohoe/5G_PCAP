@@ -93,7 +93,20 @@ class LangSmithCallback(BaseCallback):
         self._start(call_id, getattr(instance, "model", "lm"), "llm", inputs)
 
     def on_lm_end(self, call_id, outputs, exception=None):
-        self._end(call_id, outputs, exception)
+        self._end(call_id, _normalize_lm_outputs(outputs), exception)
+
+
+def _normalize_lm_outputs(outputs):
+    """dspy's legacy LM call returns a list of str/dict; LangSmith stores
+    outputs as a dict, and RunTree coerces lists through dict(), which
+    pairs each dict's first two *keys* as key/value. Unwrap the single
+    completion — carrying `reasoning_content` alongside `text` when the
+    model returns reasoning — so both survive into the trace."""
+    if not isinstance(outputs, list):
+        return outputs
+    if len(outputs) == 1 and isinstance(outputs[0], dict):
+        return outputs[0]
+    return {"outputs": outputs}
 
 
 def install(source: str = SOURCE) -> None:

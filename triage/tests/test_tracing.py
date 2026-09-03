@@ -118,8 +118,9 @@ def test_module_and_lm_calls_nest_under_the_module(tracing_on):
     token = ACTIVE_CALL_ID.set("m1")
     try:
         cb.on_lm_start("l1", FakeLM(), {"prompt": "..."})
-        cb.on_lm_end("l1", {"message": "...",
-                            "usage": {"total_tokens": 42}}, None)
+        cb.on_lm_end("l1", [{"text": "inspect 1",
+                             "reasoning_content": "the flow shows 1"}],
+                     None)
     finally:
         ACTIVE_CALL_ID.reset(token)
     cb.on_module_end("m1", {"actions": "inspect 1"}, None)
@@ -129,8 +130,32 @@ def test_module_and_lm_calls_nest_under_the_module(tracing_on):
     assert lm_run.name == "gpt-oss-120b"
     assert lm_run.run_type == "llm"
     assert lm_run.parent_run is module_run
-    assert lm_run.outputs["usage"]["total_tokens"] == 42
+    assert lm_run.outputs == {"text": "inspect 1",
+                              "reasoning_content": "the flow shows 1"}
     assert lm_run.posted and module_run.posted
+
+
+def test_lm_end_unwraps_dspys_list_of_dicts(tracing_on):
+    # dspy's legacy LM call hands the callback a list of one dict —
+    # {"text": ..., "reasoning_content": ...} when Groq returns reasoning.
+    # LangSmith stores outputs as a dict, and RunTree's own list coercion
+    # pairs the dict's first two *keys*, so the callback unwraps.
+    cb = tracing.LangSmithCallback()
+    cb.on_lm_start("l1", FakeLM(), {"prompt": "..."})
+    cb.on_lm_end("l1", [{"text": "OK",
+                         "reasoning_content": "must reply OK"}], None)
+    run = StubRunTree.created[-1]
+    assert run.outputs == {"text": "OK",
+                           "reasoning_content": "must reply OK"}
+
+
+def test_lm_end_keeps_text_only_outputs(tracing_on):
+    # a model with no reasoning yields a list of plain strings
+    cb = tracing.LangSmithCallback()
+    cb.on_lm_start("l1", FakeLM(), {"prompt": "..."})
+    cb.on_lm_end("l1", ["OK"], None)
+    run = StubRunTree.created[-1]
+    assert run.outputs == {"outputs": ["OK"]}
 
 
 def test_module_end_records_errors(tracing_on):

@@ -73,7 +73,9 @@ objective as inputs, and the final Episode as its output. Nested under
 it are the search's node phases — `node.<depth>.expand`, `.execute`, and
 `.evaluate` runs — and under each phase the dspy module runs
 (`ExpandSignature`, `EvaluateSignature`) and their LM calls, with
-prompts, outputs, and token usage. Parent-child structure mirrors the
+prompts, outputs, and token usage — including the model's chain-of-thought
+as `reasoning_content` on LM runs when Groq returns it (gpt-oss-120b
+does). Parent-child structure mirrors the
 search tree, not the call stack, so a trace reads like the search itself.
 The callback lives in [`triage/tracing.py`](./triage/tracing.py) and is
 installed when the Groq LM builds; tracing failure (a dropped upload,

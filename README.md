@@ -19,8 +19,10 @@ Human approval gate — with the Outcome feeding a gated learning loop.
 The committed end-to-end
 [`sample Incident Record`](dispatch/docs/sample-incident-record.md) shows
 a real `n4_upf_timeout` run: detected from KPI degradation, investigated
-by the live specialists, left **pending** at the gate. The diagram's
-source of truth is
+by the live specialists, left **pending** at the gate. The same run is
+rendered as an interactive incident page — [`The Blackholed UPF`](https://adriandonohoe.github.io/NetCortex/demo/),
+hosted on GitHub Pages from [`demo/index.html`](demo/index.html). The
+diagram's source of truth is
 [`dispatch/docs/diagrams/pipeline.json`](dispatch/docs/diagrams/pipeline.json).
 
 ## Layout

@@ -93,6 +93,14 @@
     max-width: 56ch;
     margin: 0 0 20px;
   }
+  .tagline {
+    font-size: 17px;
+    line-height: 1.45;
+    color: var(--ink);
+    max-width: 56ch;
+    margin: 0 0 10px;
+    text-wrap: balance;
+  }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 36px; }
   .chip {
     font-family: "IBM Plex Mono", monospace;
@@ -314,6 +322,33 @@
   .treewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
   .treewrap svg { display: block; min-width: 820px; }
 
+  /* ---------- root cause ---------- */
+  .rootcause {
+    background: var(--accent-soft);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--accent);
+    border-radius: 8px;
+    padding: 18px 20px;
+    margin: 0 0 18px;
+  }
+  .rootcause .rclabel {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 8px;
+  }
+  .rootcause blockquote {
+    margin: 0;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 17px;
+    font-weight: 500;
+    line-height: 1.5;
+    color: var(--ink);
+    text-wrap: balance;
+  }
+
   /* ---------- signature table ---------- */
   table.sigs { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   table.sigs th, table.sigs td {
@@ -404,6 +439,9 @@
 
   <div class="eyebrow">NetCortex · dispatch pipeline</div>
   <h1>The Blackholed UPF</h1>
+  <p class="tagline">
+    An autonomous 5G incident-triage system that stops before it acts.
+  </p>
   <p class="subtitle">
     One real dispatch run, end to end: the <b>n4_upf_timeout</b> lab scenario drops the
     UPF&rsquo;s PFCP traffic, KPI detection raises an Alarm, three specialist agents gather
@@ -748,8 +786,16 @@
       inventory) and may only end the search with a <code>finalize</code> whose citations name
       inventory items exactly. Node&nbsp;5 is the leaf where the winning episode grounded.
     </p>
+    <div class="rootcause">
+      <p class="rclabel">root cause &mdash; node.5&rsquo;s finalize, grounded</p>
+      <blockquote>
+        &ldquo;The missing UPF heartbeats caused the SMF to report no UPF available,
+        triggering NAS cause 38 rejections that drove down the procedure success rate
+        and inflated session latency.&rdquo;
+      </blockquote>
+    </div>
     <div class="treewrap">
-      <svg viewBox="0 0 900 272" role="img" aria-label="LATS search tree: node.1 root with six expands, children node.2, node.3, node.4, node.5; node.5 is the winning leaf">
+      <svg viewBox="0 0 900 172" role="img" aria-label="LATS search tree: node.1 root with six expands, children node.2, node.3, node.4, node.5; node.5 is the winning leaf">
         <g font-family="IBM Plex Mono, monospace" font-size="11">
           <rect x="396" y="18" width="108" height="42" rx="6"
                 fill="var(--surface)" stroke="var(--accent)" stroke-width="1.5"/>
@@ -786,14 +832,6 @@
           <text x="728" y="120" text-anchor="middle" fill="var(--accent)" font-weight="600">node.5 · winner</text>
           <text x="728" y="136" text-anchor="middle" fill="var(--muted)">execute 1 · evaluate 1</text>
           <text x="728" y="151" text-anchor="middle" fill="var(--muted)">finalize, grounded</text>
-
-          <text x="728" y="184" text-anchor="middle" fill="var(--muted)">root cause</text>
-          <line x1="728" y1="190" x2="728" y2="202" stroke="var(--line)" stroke-width="1.5"/>
-          <rect x="20" y="202" width="860" height="52" rx="6"
-                fill="var(--surface)" stroke="var(--line)"/>
-          <text x="34" y="222" fill="var(--ink)">&#8220;The missing UPF heartbeats caused the SMF to report no UPF</text>
-          <text x="34" y="237" fill="var(--ink)">available, triggering NAS cause 38 rejections that drove down the</text>
-          <text x="34" y="252" fill="var(--ink)">procedure success rate and inflated session latency.&#8221;</text>
         </g>
       </svg>
     </div>

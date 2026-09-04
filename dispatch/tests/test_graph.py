@@ -263,7 +263,8 @@ def test_log_node_replaces_stub_items_with_grounded_evidence(ctx, event,
     def extract(text, event):
         return [{"kind": "request unanswered",
                  "entry": "UPF logs the request but never answers",
-                 "keys": {"nf": "upf"}, "citation": line}]
+                 "keys": {"nf": "upf"},
+                 "citation": f"log:{UPF_LOG_INDEX}"}]
 
     calls = []
     graph = build_graph(ctx["state_path"], ctx["records_dir"],
@@ -272,7 +273,7 @@ def test_log_node_replaces_stub_items_with_grounded_evidence(ctx, event,
                         extractor=extract)
     run_to_approval(graph, event, stub)
     record = (ctx["records_dir"] / f'{event["incident_id"]}.md').read_text()
-    assert line in record                # grounded, cited by its exact line
+    assert line in record                # grounded, cited by its index
     assert "UPF stuck" not in record     # stub log item replaced
     assert "upf.log:" not in record
     assert "sandbox/core/log/upf.log:1833" not in record
@@ -291,7 +292,8 @@ def test_investigate_node_replaces_stub_root_cause(ctx, event, stub):
     def extract(text, event):
         return [{"kind": "request unanswered",
                  "entry": "UPF logs the request but never answers",
-                 "keys": {"nf": "upf"}, "citation": line}]
+                 "keys": {"nf": "upf"},
+                 "citation": f"log:{UPF_LOG_INDEX}"}]
 
     # The spec's stub-injected Tree pattern at the graph seam: a real
     # triage Tree with canned expand/evaluate steps and the Dispatcher's
@@ -300,13 +302,14 @@ def test_investigate_node_replaces_stub_root_cause(ctx, event, stub):
                      "ts": 1749999901.510724,
                      "entry": "UPF logs the request but never answers",
                      "cause": None, "endpoints": None,
-                     "keys": {"nf": "upf"}, "citation": line}
+                     "keys": {"nf": "upf"},
+                     "citation": f"log:{UPF_LOG_INDEX}", "line": line}
 
     def expand(objective, trajectory, n):
         assert line in objective        # the objective names the evidence
         return ["finalize " + json.dumps(
             {"narrative": narrative,
-             "cited_evidence": [{"citation": line}]})]
+             "cited_evidence": [{"citation": f"log:{UPF_LOG_INDEX}"}]})]
 
     def evaluate(objective, trajectory):
         return types.SimpleNamespace(reward=1.0, status="complete",
@@ -399,19 +402,21 @@ def test_full_audit_trail_end_to_end(ctx, event, stub):
     def extract(text, event):
         return [{"kind": "request unanswered",
                  "entry": "UPF logs the request but never answers",
-                 "keys": {"nf": "upf"}, "citation": line}]
+                 "keys": {"nf": "upf"},
+                 "citation": f"log:{UPF_LOG_INDEX}"}]
 
     grounded_item = {"source": "log", "kind": "request unanswered",
                      "ts": 1749999901.510724,
                      "entry": "UPF logs the request but never answers",
                      "cause": None, "endpoints": None,
-                     "keys": {"nf": "upf"}, "citation": line}
+                     "keys": {"nf": "upf"},
+                     "citation": f"log:{UPF_LOG_INDEX}", "line": line}
 
     def expand(objective, trajectory, n):
         assert line in objective
         return ["finalize " + json.dumps(
             {"narrative": narrative,
-             "cited_evidence": [{"citation": line}]})]
+             "cited_evidence": [{"citation": f"log:{UPF_LOG_INDEX}"}]})]
 
     def evaluate(objective, trajectory):
         return types.SimpleNamespace(reward=1.0, status="complete",
@@ -499,7 +504,8 @@ def test_execute_writes_episode_with_evidence_keys_on_execute(ctx, event,
     def extract(text, event):
         return [{"kind": "request unanswered",
                  "entry": "UPF logs the request but never answers",
-                 "keys": {"nf": "upf"}, "citation": line}]
+                 "keys": {"nf": "upf"},
+                 "citation": f"log:{UPF_LOG_INDEX}"}]
 
     episodes = EpisodeStore(_episodes_path(ctx))
     graph = build_graph(ctx["state_path"], ctx["records_dir"],
@@ -532,12 +538,16 @@ def test_without_episodes_seam_nothing_is_written(ctx, event, stub):
 UPF_LOG_LINE = ("upf     | 2025-06-15T15:05:01.510724553Z [open5gs-upf] INFO "
                 "[upf] PFCP[0] Session Establishment Request "
                 "(../src/upf/pfcp-sm.c:225)")
+# The log item's citation: a `log:<n>` handle into the windowed fixture.
+UPF_LOG_INDEX = (FIXTURES / "core_logs_n4_timeout.txt").read_text() \
+    .splitlines().index(UPF_LOG_LINE) + 1
 
 
 def _log_extractor(text, event):
     return [{"kind": "request unanswered",
              "entry": "UPF logs the request but never answers",
-             "keys": {"nf": "upf"}, "citation": UPF_LOG_LINE}]
+             "keys": {"nf": "upf"},
+             "citation": f"log:{UPF_LOG_INDEX}"}]
 
 
 def _seeded_graph(ctx, episodes, search):
@@ -563,7 +573,7 @@ def test_investigate_seeds_objective_with_past_episodes(ctx, event, stub):
     def search(objective):
         objectives.append(objective)
         return {"narrative": "the UPF never answered",
-                "cited_evidence": [{"citation": UPF_LOG_LINE}]}
+                "cited_evidence": [{"citation": f"log:{UPF_LOG_INDEX}"}]}
 
     run_to_approval(_seeded_graph(ctx, episodes, search), event, stub)
     objective = objectives[0]
@@ -580,7 +590,7 @@ def test_investigate_objective_untouched_without_episodes(ctx, event, stub):
     def search(objective):
         objectives.append(objective)
         return {"narrative": "the UPF never answered",
-                "cited_evidence": [{"citation": UPF_LOG_LINE}]}
+                "cited_evidence": [{"citation": f"log:{UPF_LOG_INDEX}"}]}
 
     run_to_approval(_seeded_graph(ctx, None, search), event, stub)
     assert "Past similar incidents" not in objectives[0]

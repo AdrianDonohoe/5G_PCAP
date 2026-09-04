@@ -36,9 +36,12 @@ def render_record(rec: dict) -> str:
     lines += ["## Correlation graph", ""]
     for index, item in enumerate(rec["evidence"]):
         keys = ", ".join(f"{k}={v}" for k, v in item["keys"].items())
+        citation = item["citation"]
+        if item.get("line"):
+            citation = f"{citation} — {item['line']}"
         lines.append(f"- [{index}] {item['source']} {item['kind']}: "
                      f"{item['entry']} (keys: {keys}) — "
-                     f"cited: {item['citation']}")
+                     f"cited: {citation}")
     if not rec["evidence"]:
         lines.append("- (no evidence)")
     lines.append("")

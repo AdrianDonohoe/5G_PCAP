@@ -31,3 +31,6 @@ class EvidenceItem(BaseModel):
     endpoints: list[str] | None = None
     keys: dict = Field(default_factory=dict)
     citation: str
+    # log items only: the looked-up windowed line behind a `log:<n>`
+    # citation, so the record reads standalone.
+    line: str | None = None

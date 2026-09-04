@@ -67,9 +67,14 @@ def inspect_observation(evidence: list, links: list) -> str:
     for index, item in enumerate(evidence, 1):
         keys = ", ".join(f"{k}={v}" for k, v in item.get("keys", {}).items())
         key_part = f" (keys: {keys})" if keys else ""
+        citation = item["citation"]
+        # A log item's looked-up line rides along so the agent can read
+        # the evidence; the citation token itself stays copyable-exact.
+        if item.get("line"):
+            citation = f"{citation} (line: {item['line']})"
         lines.append(f"[{index}] {item['source']} {item['kind']}: "
                      f"{item['entry']}{key_part} — "
-                     f"citation: {item['citation']}")
+                     f"citation: {citation}")
     if not evidence:
         lines.append("- (no evidence)")
     if links:

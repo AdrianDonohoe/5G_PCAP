@@ -7,18 +7,18 @@
     "detail": null,
     "episode": {
       "incident_type": "n4_upf_timeout",
-      "narrative": "PFCP Session Establishment Requests were repeatedly sent without any Session Establishment Response, leading to a timeout.",
+      "narrative": "The PFCP Session Establishment procedure timed out because the UPF never responded to the SMF's Session Establishment Request",
       "cited_evidence": [
         {"message": "PFCP Session Establishment Request",
-         "cause": null, "ts": 1787137700.17}
+         "cause": null, "ts": 1788516709.569}
       ],
-      "created_at": "2026-08-19T12:20:26.957085Z"
+      "created_at": "2026-09-04T10:14:29.319278Z"
     },
     "reward": 1.0,
     "rollouts": 1,
     "trajectory": [
       [
-        "finalize {\"incident_type\": \"n4_upf_timeout\", \"narrative\": \"PFCP Session Establishment Requests were repeatedly sent without any Session Establishment Response, leading to a timeout.\", \"cited_evidence\": [{\"message\": \"PFCP Session Establishment Request\", \"cause\": null, \"ts\": 1787137700.17}]}",
+        "finalize {\"incident_type\":\"n4_upf_timeout\",\"narrative\":\"The PFCP Session Establishment procedure timed out because the UPF never responded to the SMF's Session Establishment Request\",\"cited_evidence\":[{\"message\":\"PFCP Session Establishment Request\",\"cause\":null,\"ts\":1788516709.569}]}",
         "finalize accepted: hypothesis grounded in 1 evidence item(s)."
       ]
     ],

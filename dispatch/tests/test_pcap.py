@@ -253,5 +253,5 @@ def test_real_n4_upf_timeout_captures_emit_grounded_items():
     assert item["source"] == "pcap"
     assert item["kind"] == "no terminal message (timeout)"
     assert item["entry"] == "PFCP Session Establishment Request"
-    assert item["ts"] == 1787137700.169746  # the inventory's exact ts
-    assert item["citation"] == "n4:64"      # the 1-based decode handle
+    assert item["ts"] == 1788516709.569422  # the inventory's exact ts
+    assert item["citation"] == "n4:9"       # the 1-based decode handle

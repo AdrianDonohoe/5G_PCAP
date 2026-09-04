@@ -1,0 +1,931 @@
+<title>The Blackholed UPF</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground: #f5f7f9;
+    --surface: #ffffff;
+    --raised: #eef2f5;
+    --ink: #1b2430;
+    --muted: #5a6b7d;
+    --faint: #8795a4;
+    --line: #d8dfe7;
+    --accent: #2a4bd7;
+    --accent-soft: #e3e9fb;
+    --ok: #1f7a4d;
+    --warn: #b65f1e;
+    --crit: #b3261e;
+    --log-bg: #f0f3f6;
+    --term-bg: #131a24;
+    --term-ink: #d7e0ea;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #10151c;
+      --surface: #161d26;
+      --raised: #1b232e;
+      --ink: #e8edf2;
+      --muted: #93a4b4;
+      --faint: #6b7a8a;
+      --line: #2a3542;
+      --accent: #6e8cff;
+      --accent-soft: #1c2740;
+      --ok: #4caf7d;
+      --warn: #e08a4b;
+      --crit: #e05b52;
+      --log-bg: #131a23;
+      --term-bg: #0c1219;
+      --term-ink: #c3cedb;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #10151c;
+    --surface: #161d26;
+    --raised: #1b232e;
+    --ink: #e8edf2;
+    --muted: #93a4b4;
+    --faint: #6b7a8a;
+    --line: #2a3542;
+    --accent: #6e8cff;
+    --accent-soft: #1c2740;
+    --ok: #4caf7d;
+    --warn: #e08a4b;
+    --crit: #e05b52;
+    --log-bg: #131a23;
+    --term-bg: #0c1219;
+    --term-ink: #c3cedb;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .flash { animation: none !important; }
+  }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 40px 24px 72px; }
+
+  /* ---------- header ---------- */
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 14px;
+  }
+  h1 {
+    font-family: "IBM Plex Mono", monospace;
+    font-weight: 600;
+    font-size: 34px;
+    line-height: 1.15;
+    margin: 0 0 10px;
+    text-wrap: balance;
+  }
+  .subtitle {
+    color: var(--muted);
+    max-width: 56ch;
+    margin: 0 0 20px;
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 36px; }
+  .chip {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    padding: 4px 10px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--muted);
+    background: var(--surface);
+    white-space: nowrap;
+  }
+  .chip b { color: var(--ink); font-weight: 500; }
+  .chip.ok { color: var(--ok); border-color: var(--ok); }
+  .chip.warn { color: var(--warn); border-color: var(--warn); }
+
+  /* ---------- stepper ---------- */
+  .stepper {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    margin: 0 0 40px;
+  }
+  .step-btn {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    padding: 6px 12px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .step-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .step-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---------- sections ---------- */
+  section { margin-bottom: 48px; }
+  h2 {
+    font-family: "IBM Plex Mono", monospace;
+    font-weight: 600;
+    font-size: 19px;
+    margin: 0 0 6px;
+  }
+  .lede { color: var(--muted); max-width: 62ch; margin: 0 0 18px; }
+  h2 .n {
+    color: var(--faint);
+    font-weight: 400;
+    margin-right: 8px;
+  }
+
+  /* ---------- timeline ---------- */
+  .timeline { border-left: 2px solid var(--line); margin-left: 6px; padding-left: 22px; }
+  .tstage { position: relative; padding: 0 0 22px 0; }
+  .tstage::before {
+    content: "";
+    position: absolute;
+    left: -29px; top: 5px;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 2px solid var(--accent);
+  }
+  .tstage:last-child { padding-bottom: 0; }
+  .tstage.hot::before { background: var(--warn); border-color: var(--warn); }
+  .tstage.gate::before { background: var(--crit); border-color: var(--crit); }
+  .trow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+  .tname {
+    font-family: "IBM Plex Mono", monospace;
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .ttime {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .tdur {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    color: var(--faint);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-variant-numeric: tabular-nums;
+  }
+  .tnote { color: var(--muted); font-size: 14px; max-width: 64ch; margin-top: 3px; }
+  .tnote code, .tnote b {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 13px;
+    color: var(--ink);
+    font-weight: 500;
+  }
+
+  /* ---------- fact tiles ---------- */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+  .tile {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .tile.crit { border-left-color: var(--crit); }
+  .tile.warn { border-left-color: var(--warn); }
+  .tile .k {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .tile .v {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 20px;
+    font-weight: 600;
+    margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  .tile .d { color: var(--muted); font-size: 13px; margin-top: 2px; }
+
+  /* ---------- evidence ---------- */
+  .evgroup {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin-bottom: 12px;
+    overflow: hidden;
+  }
+  .evhead {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    cursor: pointer;
+    background: var(--surface);
+    border: 0;
+    width: 100%;
+    text-align: left;
+    font: inherit;
+    color: var(--ink);
+  }
+  .evhead:hover { background: var(--raised); }
+  .evhead:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .src {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 500;
+  }
+  .src.pcap { background: var(--accent-soft); color: var(--accent); }
+  .src.kpi  { background: var(--accent-soft); color: var(--accent); }
+  .src.log  { background: var(--accent-soft); color: var(--accent); }
+  .evhead .who { font-family: "IBM Plex Mono", monospace; font-size: 13px; color: var(--muted); flex: 1; }
+  .evhead .count {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    color: var(--faint);
+  }
+  .caret { color: var(--faint); font-size: 12px; transition: transform 0.15s ease; }
+  .evgroup.closed .caret { transform: rotate(-90deg); }
+  .evgroup.closed .evbody { display: none; }
+  .evbody { border-top: 1px solid var(--line); }
+  .evitem {
+    padding: 9px 16px;
+    border-bottom: 1px solid var(--line);
+    font-size: 13.5px;
+  }
+  .evitem:last-child { border-bottom: 0; }
+  .evitem.hot { border-left: 3px solid var(--warn); padding-left: 13px; }
+  .evitem .entry { color: var(--ink); }
+  .evitem .keys {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .evitem .cit {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    color: var(--accent);
+  }
+  .logline {
+    display: block;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--muted);
+    background: var(--log-bg);
+    border-radius: 4px;
+    padding: 6px 8px;
+    margin-top: 6px;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .toggle-btn {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    color: var(--accent);
+    background: none;
+    border: 0;
+    padding: 10px 16px;
+    cursor: pointer;
+  }
+  .toggle-btn:hover { text-decoration: underline; }
+  .extra { display: none; }
+  .evbody.open-all .extra { display: block; }
+  .xbadge {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    color: var(--warn);
+    border: 1px solid var(--warn);
+    border-radius: 4px;
+    padding: 0 6px;
+    margin-left: 6px;
+  }
+
+  /* ---------- tree svg ---------- */
+  .treewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+  .treewrap svg { display: block; min-width: 820px; }
+
+  /* ---------- signature table ---------- */
+  table.sigs { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  table.sigs th, table.sigs td {
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  table.sigs th {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+  }
+  table.sigs td.mono, table.sigs th.mono { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; }
+  .tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 0; }
+
+  /* ---------- proposal ---------- */
+  .propcard {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 18px;
+  }
+  .proprow { display: flex; gap: 12px; margin-bottom: 10px; align-items: baseline; }
+  .proprow .k {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    min-width: 110px;
+  }
+  .proprow .v { font-family: "IBM Plex Mono", monospace; font-size: 14px; font-variant-numeric: tabular-nums; }
+  .proprow .v b { font-weight: 600; }
+  .term {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12.5px;
+    line-height: 1.65;
+    background: var(--term-bg);
+    color: var(--term-ink);
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .term .p { color: var(--accent); }
+  .term .g { color: var(--ok); }
+  .gatepair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 640px) { .gatepair { grid-template-columns: 1fr; } }
+  .gate {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 16px;
+    background: var(--surface);
+  }
+  .gate.pending { border-left: 3px solid var(--crit); }
+  .gate.done { border-left: 3px solid var(--ok); }
+  .gate .gk {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .gate.pending .gk { color: var(--crit); }
+  .gate.done .gk { color: var(--ok); }
+  .gate .gv { font-size: 14px; margin-top: 6px; color: var(--ink); }
+  .gate .gv code { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; }
+
+  footer {
+    border-top: 1px solid var(--line);
+    margin-top: 56px;
+    padding-top: 18px;
+    color: var(--faint);
+    font-size: 12.5px;
+    max-width: 68ch;
+  }
+  footer code { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; }
+
+  @keyframes flash { 0% { background: var(--accent-soft); } 100% { background: var(--surface); } }
+  .flash { animation: flash 0.9s ease-out; }
+
+  a { color: var(--accent); }
+</style>
+
+<div class="wrap">
+
+  <div class="eyebrow">NetCortex · dispatch pipeline</div>
+  <h1>The Blackholed UPF</h1>
+  <p class="subtitle">
+    One real dispatch run, end to end: the <b>n4_upf_timeout</b> lab scenario drops the
+    UPF&rsquo;s PFCP traffic, KPI detection raises an Alarm, three specialist agents gather
+    47 evidence items, a LATS search explains it &mdash; and the remediation proposal stops
+    at a human gate. Every number on this page is from the run itself.
+  </p>
+  <div class="chips">
+    <span class="chip"><b>inc-kpi-06eebc61</b></span>
+    <span class="chip">source <b>kpi</b></span>
+    <span class="chip">window <b>10:11:34 &rarr; 10:12:32 UTC</b></span>
+    <span class="chip"><b>47</b> evidence items</span>
+    <span class="chip warn">proposal <b>restart_nf upf</b></span>
+    <span class="chip ok">dry-run approved</span>
+  </div>
+
+  <div class="stepper" id="stepper" aria-label="Pipeline stages">
+    <button class="step-btn" data-target="capture">1 · Capture</button>
+    <button class="step-btn" data-target="detect">2 · Detect</button>
+    <button class="step-btn" data-target="gather">3 · Gather</button>
+    <button class="step-btn" data-target="specialists">4 · Specialists</button>
+    <button class="step-btn" data-target="correlate">5 · Correlate</button>
+    <button class="step-btn" data-target="investigate">6 · Investigate</button>
+    <button class="step-btn" data-target="propose">7 · Propose</button>
+    <button class="step-btn" data-target="approval">8 · Approval</button>
+  </div>
+
+  <section id="capture">
+    <h2><span class="n">01&ndash;02</span>Capture &amp; detect</h2>
+    <p class="lede">
+      The sandbox runs a live Open5GS core (AMF, SMF, UPF, gNB, UE). The capture script
+      blackholes the UPF&rsquo;s PFCP port &mdash; <code>udp/8805</code> &mdash; for the
+      duration of one UE session, then packets flow again. Nothing else is touched.
+    </p>
+    <div class="timeline">
+      <div class="tstage">
+        <div class="trow">
+          <span class="tname">capture</span>
+          <span class="ttime">10:11:34.944 &rarr; 10:12:32.858 UTC</span>
+          <span class="tdur">57.9 s</span>
+        </div>
+        <p class="tnote">
+          <code>./capture.sh --scenario n4_upf_timeout</code> &mdash; three pcaps (N2, N4, SBI)
+          overwrite the committed fixtures; the window is one session&rsquo;s worth of PDU
+          establishment attempts against the silenced UPF.
+        </p>
+      </div>
+      <div class="tstage" id="detect">
+        <div class="trow">
+          <span class="tname">detect-kpi</span>
+          <span class="ttime">10:12:32.858</span>
+        </div>
+        <p class="tnote">
+          The merged export&rsquo;s KPIs are compared to the golden baseline; the deltas break
+          thresholds, and <code>detect-kpi</code> synthesizes the Alarm event
+          <code>inc-kpi-06eebc61</code>.
+        </p>
+      </div>
+    </div>
+    <div class="tiles" style="margin-top:16px">
+      <div class="tile crit">
+        <div class="k">procedure success rate</div>
+        <div class="v">0.0556</div>
+        <div class="d">golden: 1.0 &mdash; 18 sessions, 1 established</div>
+      </div>
+      <div class="tile crit">
+        <div class="k">pdu session rejects</div>
+        <div class="v">17</div>
+        <div class="d">5GSM cause 38 &mdash; network failure</div>
+      </div>
+      <div class="tile warn">
+        <div class="k">pdu session time</div>
+        <div class="v">1,335.7 ms</div>
+        <div class="d">golden: 3.3 ms &mdash; ~400&times; slower</div>
+      </div>
+      <div class="tile warn">
+        <div class="k">blackholed port</div>
+        <div class="v">udp/8805</div>
+        <div class="d">UPF PFCP &mdash; the scenario&rsquo;s only fault</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="specialists">
+    <h2><span class="n">03&ndash;04</span>Gather &amp; the three specialists</h2>
+    <p class="lede">
+      <code>gather</code> validates the event and loads the stub (here: none &mdash; all agents
+      run live). Then the evidence fans out to three specialists in parallel, each grounded to
+      its source before it is ever recorded.
+    </p>
+    <div class="timeline">
+      <div class="tstage" id="gather">
+        <div class="trow">
+          <span class="tname">gather</span>
+          <span class="ttime">10:13:20.282</span>
+          <span class="tdur">0.5 ms</span>
+        </div>
+      </div>
+      <div class="tstage">
+        <div class="trow">
+          <span class="tname">pcap_agent</span>
+          <span class="ttime">10:13:20.284 &rarr; 10:16:01.514</span>
+          <span class="tdur">161.2 s</span>
+        </div>
+        <p class="tnote">
+          Runs <code>5gcap analyze</code> over the three captures, then delegates the decode to
+          <code>triage analyze</code> &mdash; its own LATS search &mdash; which traced
+          <b>318 chain steps and 114 LLM calls</b>. Returns 5 items: one explicit
+          <b>5GSMPDUSessionEstabReject cause&nbsp;38</b> on N2, four PFCP Session Establishment
+          Requests that never got a terminal message.
+        </p>
+      </div>
+      <div class="tstage">
+        <div class="trow">
+          <span class="tname">kpi_agent</span>
+          <span class="ttime">10:16:01.517 &rarr; 10:16:04.774</span>
+          <span class="tdur">3.3 s</span>
+        </div>
+        <p class="tnote">
+          Re-computes the export&rsquo;s KPIs against the event. 19 items: two deviations and
+          one reject-message item per failed procedure.
+        </p>
+      </div>
+      <div class="tstage hot">
+        <div class="trow">
+          <span class="tname">log_agent</span>
+          <span class="ttime">10:16:04.775 &rarr; 10:16:15.162</span>
+          <span class="tdur">10.4 s</span>
+        </div>
+        <p class="tnote">
+          Pulls <code>docker compose logs</code> for the event&rsquo;s window, hands the extractor
+          the text with every line numbered <code>[001], [002], &hellip;</code>, and the model
+          proposes items citing <code>log:&lt;n&gt;</code> &mdash; resolved in code, never trusted.
+          23 items ground, each carrying its looked-up line.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section id="evidence">
+    <h2><span class="n">04</span>The evidence inventory</h2>
+    <p class="lede">
+      All 47 items, as recorded &mdash; grouped by source. Log items render their citation and
+      the exact looked-up line. The warm-striped rows are the smoking gun: the UPF&rsquo;s own
+      heartbeat timeout.
+    </p>
+
+    <div class="evgroup">
+      <button class="evhead" aria-expanded="true">
+        <span class="src pcap">pcap</span>
+        <span class="who">decoded from N2 / N4 captures</span>
+        <span class="count">5 items</span>
+        <span class="caret">&#9662;</span>
+      </button>
+      <div class="evbody">
+        <div class="evitem">
+          <span class="entry">5GSMPDUSessionEstabReject cause 38</span>
+          <span class="keys"> (keys: flow_id=1)</span> &mdash; <span class="cit">cited: flow:1:11</span>
+        </div>
+        <div class="evitem">
+          <span class="entry">PFCP Session Establishment Request &mdash; no terminal message (timeout)</span>
+          &mdash; <span class="cit">cited: n4:9</span>
+          <span class="xbadge">&times;4</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="evgroup">
+      <button class="evhead" aria-expanded="true">
+        <span class="src kpi">kpi</span>
+        <span class="who">golden-baseline deviations</span>
+        <span class="count">19 items</span>
+        <span class="caret">&#9662;</span>
+      </button>
+      <div class="evbody">
+        <div class="evitem">
+          <span class="entry">procedure_success_rate 0.0555&hellip; below golden 1.0</span>
+          &mdash; <span class="cit">cited: kpi.procedure_success_rate=0.05555555555555555</span>
+        </div>
+        <div class="evitem">
+          <span class="entry">pdu_session_time_ms 1335.71&hellip; above twice golden 3.288&hellip;</span>
+          &mdash; <span class="cit">cited: kpi.pdu_session_time_ms=1335.7125450583064</span>
+        </div>
+        <div class="evitem">
+          <span class="entry">reject message: 5GSMPDUSessionEstabReject nas_cause 38 (Network failure)</span>
+          <span class="keys"> (keys: flow_id=1)</span> &mdash; <span class="cit">cited: kpi.procedure_failures=17</span>
+          <span class="xbadge">&times;17</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="evgroup">
+      <button class="evhead" aria-expanded="true">
+        <span class="src log">log</span>
+        <span class="who">docker compose logs, index-grounded</span>
+        <span class="count">23 items</span>
+        <span class="caret">&#9662;</span>
+      </button>
+      <div class="evbody">
+        <div class="evitem hot">
+          <span class="entry">UPF heartbeat missing; no response from SMF</span>
+          <span class="keys"> (keys: component=UPF, issue=No Heartbeat)</span> &mdash; <span class="cit">cited: log:1</span>
+          <span class="logline">sandbox_upf  | 2026-09-04T10:12:05.483586102Z 09/04 10:12:05.483: [pfcp] WARNING: [45680] LOCAL  No Reponse. Give up! for step 1 type 1 peer [10.53.0.12]:8805 (../lib/pfcp/xact.c:640)</span>
+        </div>
+        <div class="evitem hot">
+          <span class="entry">UPF heartbeat missing; no response from SMF</span>
+          <span class="keys"> (keys: component=UPF, issue=No Heartbeat)</span> &mdash; <span class="cit">cited: log:4</span>
+          <span class="logline">sandbox_upf  | 2026-09-04T10:12:12.990874702Z 09/04 10:12:12.990: [pfcp] WARNING: [45681] LOCAL  No Reponse. Give up! for step 1 type 5 peer [10.53.0.12]:8805 (../lib/pfcp/xact.c:640)</span>
+        </div>
+        <div class="evitem">
+          <span class="entry">SMF reports no UPF available (network failure)</span>
+          <span class="keys"> (keys: error=No UPF available)</span> &mdash; <span class="cit">cited: log:498</span>
+          <span class="logline">sandbox_smf   | 2026-09-04T10:12:05.488645822Z 09/04 10:12:05.488: [smf] ERROR: No UPF available (../src/smf/pfcp-sm.c:512)</span>
+        </div>
+        <div class="evitem">
+          <span class="entry">SMF reports no associated UPF for UE</span>
+          <span class="keys"> (keys: error=No associated UPF)</span> &mdash; <span class="cit">cited: log:513</span>
+          <span class="logline">sandbox_smf   | 2026-09-04T10:12:05.839374559Z 09/04 10:12:05.839: [smf] ERROR: No UPFs are PFCP associated that are suited to RR (../src/smf/context.c:1446)</span>
+        </div>
+        <div class="evitem">
+          <span class="entry">AMF PDU session establishment reject</span>
+          <span class="keys"> (keys: error_code=[1:0], type=PDU session establishment reject)</span> &mdash; <span class="cit">cited: log:195</span>
+          <span class="logline">sandbox_amf   | 2026-09-04T10:11:57.079776040Z 09/04 10:11:57.079: [amf] ERROR: [1:0] PDU session establishment reject (../src/amf/namf-handler.c:486)</span>
+        </div>
+        <div class="evitem">
+          <span class="entry">SMF reports no associated UPF for UE (repeat)</span>
+          <span class="keys"> (keys: error=No associated UPF)</span> &mdash; <span class="cit">cited: log:636</span>
+          <span class="logline">sandbox_smf   | 2026-09-04T10:12:10.240016917Z 09/04 10:12:10.239: [smf] ERROR: No UPFs are PFCP associated that are suited to RR (../src/smf/context.c:1446)</span>
+        </div>
+        <div class="evitem">
+          <span class="entry">SMF reports no associated UPF for UE (repeat)</span>
+          <span class="keys"> (keys: error=No associated UPF)</span> &mdash; <span class="cit">cited: log:709</span>
+          <span class="logline">sandbox_smf   | 2026-09-04T10:12:15.746781339Z 09/04 10:12:15.746: [smf] ERROR: [imsi-999700000000001:1] No associated UPF (../src/smf/npcf-handler.c:546)</span>
+        </div>
+        <div class="extra">
+          <div class="evitem hot">
+            <span class="entry">UPF heartbeat missing; no response from SMF</span>
+            <span class="keys"> (keys: component=UPF, issue=No Heartbeat)</span> &mdash; <span class="cit">cited: log:6</span>
+            <span class="logline">sandbox_upf  | 2026-09-04T10:12:23.992953684Z 09/04 10:12:23.992: [pfcp] WARNING: [45682] LOCAL  No Reponse. Give up! for step 1 type 5 peer [10.53.0.12]:8805 (../lib/pfcp/xact.c:640)</span>
+          </div>
+          <div class="evitem">
+            <span class="entry">SMF reports no associated UPF for UE (repeat)</span>
+            <span class="keys"> (keys: error=No associated UPF)</span> &mdash; <span class="cit">cited: log:527</span>
+            <span class="logline">sandbox_smf   | 2026-09-04T10:12:06.939657120Z 09/04 10:12:06.939: [smf] ERROR: No UPFs are PFCP associated that are suited to RR (../src/smf/context.c:1446)</span>
+          </div>
+          <div class="evitem">
+            <span class="entry">SMF reports no associated UPF for UE (repeat)</span>
+            <span class="keys"> (keys: error=No associated UPF)</span> &mdash; <span class="cit">cited: log:542</span>
+            <span class="logline">sandbox_smf   | 2026-09-04T10:12:08.038347817Z 09/04 10:12:08.038: [smf] ERROR: No UPFs are PFCP associated that are suited to RR (../src/smf/context.c:1446)</span>
+          </div>
+          <div class="evitem">
+            <span class="entry">SMF reports no associated UPF for UE (repeat)</span>
+            <span class="keys"> (keys: error=No associated UPF)</span> &mdash; <span class="cit">cited: log:665</span>
+            <span class="logline">sandbox_smf   | 2026-09-04T10:12:12.442187289Z 09/04 10:12:12.442: [smf] ERROR: No UPFs are PFCP associated that are suited to RR (../src/smf/context.c:1446)</span>
+          </div>
+          <div class="evitem">
+            <span class="entry">SMF reports no associated UPF for UE (repeat)</span>
+            <span class="keys"> (keys: error=No associated UPF)</span> &mdash; <span class="cit">cited: log:695</span>
+            <span class="logline">sandbox_smf   | 2026-09-04T10:12:14.645844488Z 09/04 10:12:14.645: [smf] ERROR: [imsi-999700000000001:1] No associated UPF (../src/smf/npcf-handler.c:546)</span>
+          </div>
+          <div class="evitem">
+            <span class="entry">AMF PDU session establishment reject</span>
+            <span class="keys"> (keys: error_code=[1:0], type=PDU session establishment reject)</span> &mdash; <span class="cit">cited: log:206</span>
+            <span class="logline">sandbox_amf   | 2026-09-04T10:12:05.635286797Z 09/04 10:12:05.635: [amf] ERROR: [1:0] PDU session establishment reject (../src/amf/namf-handler.c:486)</span>
+          </div>
+          <div class="evitem">
+            <span class="entry">AMF PDU session establishment reject</span>
+            <span class="keys"> (keys: error_code=[1:0], type=PDU session establishment reject)</span> &mdash; <span class="cit">cited: log:217</span>
+            <span class="logline">sandbox_amf   | 2026-09-04T10:12:05.841407677Z 09/04 10:12:05.841: [amf] ERROR: [1:0] PDU session establishment reject (../src/amf/namf-handler.c:486)</span>
+          </div>
+          <div class="evitem">
+            <span class="entry">AMF PDU session establishment reject</span>
+            <span class="keys"> (keys: error_code=[1:0], type=PDU session establishment reject)</span> &mdash; <span class="cit">cited: log:239</span>
+            <span class="logline">sandbox_amf   | 2026-09-04T10:12:08.040195561Z 09/04 10:12:08.039: [amf] ERROR: [1:0] PDU session establishment reject (../src/amf/namf-handler.c:486)</span>
+          </div>
+          <div class="evitem">
+            <span class="entry">AMF PDU session establishment reject</span>
+            <span class="keys"> (keys: error_code=[1:0], type=PDU session establishment reject)</span> &mdash; <span class="cit">cited: log:250</span>
+            <span class="logline">sandbox_amf   | 2026-09-04T10:12:09.108588059Z 09/04 10:12:09.108: [amf] ERROR: [1:0] PDU session establishment reject (../src/amf/namf-handler.c:486)</span>
+          </div>
+          <div class="evitem">
+            <span class="entry">AMF PDU session establishment reject</span>
+            <span class="keys"> (keys: error_code=[1:0], type=PDU session establishment reject)</span> &mdash; <span class="cit">cited: log:261</span>
+            <span class="logline">sandbox_amf   | 2026-09-04T10:12:09.141347793Z 09/04 10:12:09.141: [amf] ERROR: [1:0] PDU session establishment reject (../src/amf/namf-handler.c:486)</span>
+          </div>
+          <div class="evitem">
+            <span class="entry">AMF PDU session establishment reject</span>
+            <span class="keys"> (keys: error_code=[1:0], type=PDU session establishment reject)</span> &mdash; <span class="cit">cited: log:272</span>
+            <span class="logline">sandbox_amf   | 2026-09-04T10:12:10.241894233Z 09/04 10:12:10.241: [amf] ERROR: [1:0] PDU session establishment reject (../src/amf/namf-handler.c:486)</span>
+          </div>
+          <div class="evitem">
+            <span class="entry">AMF PDU session establishment reject</span>
+            <span class="keys"> (keys: error_code=[1:0], type=PDU session establishment reject)</span> &mdash; <span class="cit">cited: log:283</span>
+            <span class="logline">sandbox_amf   | 2026-09-04T10:12:11.343069570Z 09/04 10:12:11.342: [amf] ERROR: [1:0] PDU session establishment reject (../src/amf/namf-handler.c:486)</span>
+          </div>
+          <div class="evitem">
+            <span class="entry">AMF PDU session establishment reject</span>
+            <span class="keys"> (keys: error_code=[1:0], type=PDU session establishment reject)</span> &mdash; <span class="cit">cited: log:294</span>
+            <span class="logline">sandbox_amf   | 2026-09-04T10:12:12.444078526Z 09/04 10:12:12.443: [amf] ERROR: [1:0] PDU session establishment reject (../src/amf/namf-handler.c:486)</span>
+          </div>
+          <div class="evitem">
+            <span class="entry">AMF PDU session establishment reject</span>
+            <span class="keys"> (keys: error_code=[1:0], type=PDU session establishment reject)</span> &mdash; <span class="cit">cited: log:305</span>
+            <span class="logline">sandbox_amf   | 2026-09-04T10:12:13.543309625Z 09/04 10:12:13.543: [amf] ERROR: [1:0] PDU session establishment reject (../src/amf/namf-handler.c:486)</span>
+          </div>
+          <div class="evitem">
+            <span class="entry">AMF PDU session establishment reject</span>
+            <span class="keys"> (keys: error_code=[1:0], type=PDU session establishment reject)</span> &mdash; <span class="cit">cited: log:316</span>
+            <span class="logline">sandbox_amf   | 2026-09-04T10:12:14.647793755Z 09/04 10:12:14.647: [amf] ERROR: [1:0] PDU session establishment reject (../src/amf/namf-handler.c:486)</span>
+          </div>
+          <div class="evitem">
+            <span class="entry">AMF PDU session establishment reject</span>
+            <span class="keys"> (keys: error_code=[1:0], type=PDU session establishment reject)</span> &mdash; <span class="cit">cited: log:327</span>
+            <span class="logline">sandbox_amf   | 2026-09-04T10:12:15.748607415Z 09/04 10:12:15.748: [amf] ERROR: [1:0] PDU session establishment reject (../src/amf/namf-handler.c:486)</span>
+          </div>
+        </div>
+        <button class="toggle-btn" data-more>show the other 16 log items &#9662;</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="correlate">
+    <h2><span class="n">05</span>Correlate</h2>
+    <p class="lede">
+      0.9 ms of deterministic code: items that share a key get linked &mdash; unless a key is
+      claimed by more than two items, which would make the link a guess.
+    </p>
+    <div class="propcard">
+      <p style="margin:0">
+        <code>no links</code> &mdash; 17 of the 19 KPI items share
+        <code>procedure_failures=17</code>, and the ambiguity rule forbids linking when more than
+        two items claim a key. The inventory stays flat, and the investigation reads it as-is.
+      </p>
+    </div>
+  </section>
+
+  <section id="investigate">
+    <h2><span class="n">06</span>Investigate &mdash; the LATS search</h2>
+    <p class="lede">
+      5.0 seconds, 204 traced phases across five tree nodes. Each phase is one
+      <code>expand</code> / <code>execute</code> / <code>evaluate</code> step of a LATS search
+      over the evidence inventory &mdash; the agent may <code>inspect</code> (re-read the
+      inventory) and may only end the search with a <code>finalize</code> whose citations name
+      inventory items exactly. Node&nbsp;5 is the leaf where the winning episode grounded.
+    </p>
+    <div class="treewrap">
+      <svg viewBox="0 0 900 272" role="img" aria-label="LATS search tree: node.1 root with six expands, children node.2, node.3, node.4, node.5; node.5 is the winning leaf">
+        <g font-family="IBM Plex Mono, monospace" font-size="11">
+          <rect x="396" y="18" width="108" height="42" rx="6"
+                fill="var(--surface)" stroke="var(--accent)" stroke-width="1.5"/>
+          <text x="450" y="35" text-anchor="middle" fill="var(--ink)" font-weight="600">node.1 · root</text>
+          <text x="450" y="50" text-anchor="middle" fill="var(--muted)">expand &times;6</text>
+
+          <line x1="450" y1="60" x2="450" y2="84" stroke="var(--line)" stroke-width="1.5"/>
+          <line x1="172" y1="84" x2="728" y2="84" stroke="var(--line)" stroke-width="1.5"/>
+
+          <line x1="172" y1="84" x2="172" y2="102" stroke="var(--line)" stroke-width="1.5"/>
+          <rect x="96" y="102" width="152" height="64" rx="6"
+                fill="var(--surface)" stroke="var(--line)"/>
+          <text x="172" y="120" text-anchor="middle" fill="var(--ink)" font-weight="600">node.2</text>
+          <text x="172" y="136" text-anchor="middle" fill="var(--muted)">expand 11 · execute 17</text>
+          <text x="172" y="151" text-anchor="middle" fill="var(--muted)">evaluate 17</text>
+
+          <line x1="357" y1="84" x2="357" y2="102" stroke="var(--line)" stroke-width="1.5"/>
+          <rect x="281" y="102" width="152" height="64" rx="6"
+                fill="var(--surface)" stroke="var(--line)"/>
+          <text x="357" y="120" text-anchor="middle" fill="var(--ink)" font-weight="600">node.3</text>
+          <text x="357" y="136" text-anchor="middle" fill="var(--muted)">expand 12 · execute 33</text>
+          <text x="357" y="151" text-anchor="middle" fill="var(--muted)">evaluate 33</text>
+
+          <line x1="542" y1="84" x2="542" y2="102" stroke="var(--line)" stroke-width="1.5"/>
+          <rect x="466" y="102" width="152" height="64" rx="6"
+                fill="var(--surface)" stroke="var(--line)"/>
+          <text x="542" y="120" text-anchor="middle" fill="var(--ink)" font-weight="600">node.4</text>
+          <text x="542" y="136" text-anchor="middle" fill="var(--muted)">expand 1 · execute 36</text>
+          <text x="542" y="151" text-anchor="middle" fill="var(--muted)">evaluate 36</text>
+
+          <line x1="728" y1="84" x2="728" y2="102" stroke="var(--accent)" stroke-width="1.5"/>
+          <rect x="652" y="102" width="152" height="64" rx="6"
+                fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+          <text x="728" y="120" text-anchor="middle" fill="var(--accent)" font-weight="600">node.5 · winner</text>
+          <text x="728" y="136" text-anchor="middle" fill="var(--muted)">execute 1 · evaluate 1</text>
+          <text x="728" y="151" text-anchor="middle" fill="var(--muted)">finalize, grounded</text>
+
+          <text x="728" y="184" text-anchor="middle" fill="var(--muted)">root cause</text>
+          <line x1="728" y1="190" x2="728" y2="202" stroke="var(--line)" stroke-width="1.5"/>
+          <rect x="20" y="202" width="860" height="52" rx="6"
+                fill="var(--surface)" stroke="var(--line)"/>
+          <text x="34" y="222" fill="var(--ink)">&#8220;The missing UPF heartbeats caused the SMF to report no UPF</text>
+          <text x="34" y="237" fill="var(--ink)">available, triggering NAS cause 38 rejections that drove down the</text>
+          <text x="34" y="252" fill="var(--ink)">procedure success rate and inflated session latency.&#8221;</text>
+        </g>
+      </svg>
+    </div>
+    <p class="lede" style="margin-top:12px; font-size:12.5px">
+      Tree structure from the LangSmith trace; step payloads live in the checkpoint. The
+      dispatch-level Groq calls traced for this run:
+    </p>
+    <div class="tablewrap">
+      <table class="sigs">
+        <tr>
+          <th>signature</th><th class="mono">calls</th><th>stage</th><th>what it produced</th>
+        </tr>
+        <tr>
+          <td class="mono">LogEvidenceSignature</td><td class="mono">1</td><td>log_agent</td>
+          <td>the 23 grounded evidence proposals, each citing <code>log:&lt;n&gt;</code></td>
+        </tr>
+        <tr>
+          <td class="mono">ExpandSignature</td><td class="mono">1</td><td>investigate</td>
+          <td>next-action candidates for the search tree</td>
+        </tr>
+        <tr>
+          <td class="mono">EvaluateSignature</td><td class="mono">2</td><td>investigate</td>
+          <td>reward / status / reflection per explored node</td>
+        </tr>
+        <tr>
+          <td class="mono">ProposalSignature</td><td class="mono">1</td><td>propose</td>
+          <td>the remediation proposal below</td>
+        </tr>
+      </table>
+    </div>
+  </section>
+
+  <section id="propose">
+    <h2><span class="n">07</span>Propose &mdash; from a five-action vocabulary</h2>
+    <p class="lede">
+      The proposal must pick one action from a fixed vocabulary
+      (<code>restart_nf</code>, <code>scale_nf</code>, <code>drain_traffic</code>,
+      <code>rollback_config</code>, <code>no_op</code>); the model argued
+      <code>restart_nf upf</code> &mdash; the exact box the scenario silenced.
+    </p>
+    <div class="propcard">
+      <div class="proprow"><span class="k">action</span><span class="v"><b>restart_nf</b></span></div>
+      <div class="proprow"><span class="k">arguments</span><span class="v">{ "nf": "upf" }</span></div>
+      <div class="proprow"><span class="k">justification</span>
+        <span class="v" style="font-family:'IBM Plex Sans',system-ui,sans-serif; font-size:14px; max-width:56ch">
+          Restarting the UPF restores its heartbeat, enabling the SMF to detect an available UPF
+          and stop the NAS cause&nbsp;38 rejections that were degrading the KPI.
+        </span>
+      </div>
+      <div class="proprow"><span class="k">command</span>
+        <span class="v">docker compose --project-directory /path/to/NetCortex/sandbox/core restart upf</span>
+      </div>
+      <div class="proprow"><span class="k">hash</span>
+        <span class="v">20722c43c5b0302e8efcf00a63190048757601c567b2050eccb69ef9a536554a</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="approval">
+    <h2><span class="n">08</span>The human gate</h2>
+    <p class="lede">
+      The graph stops at the <code>approval</code> interrupt &mdash; 10:16:21, 2.8 minutes after
+      the alarm. Nothing runs until a human says so. The incident was then approved as a
+      dry-run; the command printed, never executed.
+    </p>
+    <div class="gatepair">
+      <div class="gate pending">
+        <div class="gk">pending &mdash; interrupt raised</div>
+        <div class="gv">
+          <code>GraphInterrupt: {"pending": true}</code><br>
+          record ends at &ldquo;Approval status: pending&rdquo;
+        </div>
+      </div>
+      <div class="gate done">
+        <div class="gk">approve inc-kpi-06eebc61 (dry-run)</div>
+        <div class="gv">
+          <code>dispatch approve inc-kpi-06eebc61</code><br>
+          prints the command to be applied &mdash; and applies nothing.
+        </div>
+      </div>
+    </div>
+    <div class="term" style="margin-top:12px"><span class="p">$</span> dispatch approve inc-kpi-06eebc61
+<span class="g">dry-run:</span> docker compose --project-directory /path/to/NetCortex/sandbox/core restart upf</div>
+    <p class="lede" style="margin-top:14px">
+      That is the whole loop: capture &rarr; detect &rarr; evidence &rarr; explain &rarr; propose
+      &rarr; human gate. The pipeline never touched the running core &mdash; the restart command
+      is exactly what a human would run, and the human is the one who runs it.
+    </p>
+  </section>
+
+  <footer>
+    Built from the real run <code>inc-kpi-06eebc61</code> (2026-09-04): event, checkpoint record,
+    and LangSmith traces extracted with the read API from the <code>triage-dispatch</code> project.
+    Machine paths are normalized to <code>/path/to/NetCortex</code>. This page ships with the repo
+    at <code>demo/index.html</code>; the record&rsquo;s full markdown lives in
+    <code>dispatch/records/</code>.
+  </footer>
+
+</div>
+
+<script>
+  document.querySelectorAll(".step-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var el = document.getElementById(btn.dataset.target);
+      if (!el) return;
+      var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+      el.classList.remove("flash");
+      void el.offsetWidth;
+      el.classList.add("flash");
+    });
+  });
+
+  document.querySelectorAll(".evhead").forEach(function (head) {
+    head.addEventListener("click", function () {
+      var group = head.closest(".evgroup");
+      var open = !group.classList.contains("closed");
+      group.classList.toggle("closed", open);
+      head.setAttribute("aria-expanded", String(!open));
+    });
+  });
+
+  document.querySelectorAll(".toggle-btn[data-more]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var body = btn.closest(".evbody");
+      var open = body.classList.toggle("open-all");
+      btn.textContent = open
+        ? "collapse to the highlights ▲"
+        : btn.dataset.moreLabel;
+    });
+  });
+  document.querySelectorAll(".toggle-btn[data-more]").forEach(function (btn) {
+    btn.dataset.moreLabel = btn.textContent;
+  });
+</script>
